@@ -1,11 +1,11 @@
 /*!
- * encantar.js version 0.3.0
+ * encantar.js version 0.4.0
  * GPU-accelerated Augmented Reality for the web
  * Copyright 2022-2024 Alexandre Martins <alemartf(at)gmail.com> (https://github.com/alemart)
  * https://github.com/alemart/encantar-js
  *
  * @license LGPL-3.0-or-later
- * Date: 2024-10-20T06:24:13.488Z
+ * Date: 2024-12-18T22:52:50.448Z
  */
 (function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
@@ -19415,7 +19415,7 @@ var speedy_vision_default = /*#__PURE__*/__webpack_require__.n(speedy_vision);
 /**
  * Base error class
  */
-class BaseError extends Error {
+class ARError extends Error {
     /**
      * Constructor
      * @param message error message
@@ -19443,7 +19443,7 @@ class BaseError extends Error {
 /**
  * A method has received one or more illegal arguments
  */
-class IllegalArgumentError extends BaseError {
+class IllegalArgumentError extends ARError {
     get name() {
         return 'IllegalArgumentError';
     }
@@ -19452,7 +19452,7 @@ class IllegalArgumentError extends BaseError {
  * The method arguments are valid, but the method can't be called due to the
  * current state of the object
  */
-class IllegalOperationError extends BaseError {
+class IllegalOperationError extends ARError {
     get name() {
         return 'IllegalOperationError';
     }
@@ -19460,7 +19460,7 @@ class IllegalOperationError extends BaseError {
 /**
  * The requested operation is not supported
  */
-class NotSupportedError extends BaseError {
+class NotSupportedError extends ARError {
     get name() {
         return 'NotSupportedError';
     }
@@ -19468,7 +19468,7 @@ class NotSupportedError extends BaseError {
 /**
  * Access denied
  */
-class AccessDeniedError extends BaseError {
+class AccessDeniedError extends ARError {
     get name() {
         return 'AccessDeniedError';
     }
@@ -19476,7 +19476,7 @@ class AccessDeniedError extends BaseError {
 /**
  * Timeout
  */
-class TimeoutError extends BaseError {
+class TimeoutError extends ARError {
     get name() {
         return 'TimeoutError';
     }
@@ -19484,15 +19484,23 @@ class TimeoutError extends BaseError {
 /**
  * Assertion error
  */
-class AssertionError extends BaseError {
+class AssertionError extends ARError {
     get name() {
         return 'AssertionError';
     }
 }
 /**
+ * Numerical error
+ */
+class NumericalError extends ARError {
+    get name() {
+        return 'NumericalError';
+    }
+}
+/**
  * Tracking error
  */
-class TrackingError extends BaseError {
+class TrackingError extends ARError {
     get name() {
         return 'TrackingError';
     }
@@ -19500,7 +19508,7 @@ class TrackingError extends BaseError {
 /**
  * Detection error
  */
-class DetectionError extends BaseError {
+class DetectionError extends ARError {
     get name() {
         return 'DetectionError';
     }
@@ -19508,7 +19516,7 @@ class DetectionError extends BaseError {
 /**
  * Training error
  */
-class TrainingError extends BaseError {
+class TrainingError extends ARError {
     get name() {
         return 'TrainingError';
     }
@@ -19589,8 +19597,12 @@ function computeResolution(resolution, aspectRatio) {
 function parseHeight(resolution) {
     if (ALIAS_TO_HEIGHT.hasOwnProperty(resolution))
         return ALIAS_TO_HEIGHT[resolution];
-    if (CUSTOM_RESOLUTION_REGEX.test(resolution))
-        return parseInt(resolution);
+    //if(CUSTOM_RESOLUTION_REGEX.test(resolution)) // really needed? is it fast?
+    if (resolution.endsWith('p')) {
+        const r = resolution[0];
+        if (r >= '1' && r <= '9')
+            return parseInt(resolution);
+    }
     return Number.NaN;
 }
 
@@ -19940,6 +19952,8 @@ const POWER_ICON = Object.freeze({
     'low-power': '&#x1F50B',
     'high-performance': '&#x26A1'
 });
+/** Button icons (atlas) */
+const BUTTON_ICONS = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAQCAYAAAB3AH1ZAAAAVUlEQVRIS2NkGGDAOMD2M4w6YDQE8IbAfyBgBAJSEipIDy712MzCaTiyQdRwBC4zsDoAmy8ocQQ+vRgOIDUI8UUPMVFIUvySkhaIVTvqgNEQGPAQAABSNiARgz5LggAAAABJRU5ErkJggg==';
 /**
  * Stats panel used for development purposes
  */
@@ -19963,15 +19977,16 @@ class StatsPanel {
     /**
      * A method to be called in the update loop
      * @param time current time in ms
-     * @param trackers the trackers attached to the session
      * @param sources the sources of media linked to the session
+     * @param trackers the trackers attached to the session
+     * @param viewport the viewport
      * @param gpu GPU cycles per second
      * @param fps frames per second
      */
-    update(time, trackers, sources, gpu, fps) {
+    update(time, sources, trackers, viewport, gpu, fps) {
         if (time >= this._lastUpdate + stats_panel_UPDATE_INTERVAL) {
             this._lastUpdate = time;
-            this._update(trackers, sources, fps, gpu);
+            this._update(sources, trackers, viewport, fps, gpu);
         }
     }
     /**
@@ -19988,12 +20003,13 @@ class StatsPanel {
     }
     /**
      * Update the contents of the panel
-     * @param trackers the trackers attached to the session
      * @param sources the sources of media linked to the session
+     * @param trackers the trackers attached to the session
+     * @param viewport the viewport
      * @param fps frames per second
      * @param gpu GPU cycles per second
      */
-    _update(trackers, sources, fps, gpu) {
+    _update(sources, trackers, viewport, fps, gpu) {
         // all sanitized
         const lfps = this._label('_ar_fps');
         if (lfps !== null) {
@@ -20017,6 +20033,11 @@ class StatsPanel {
         if (lout !== null) {
             const trackerStats = trackers.map(tracker => tracker._stats).join(', ');
             lout.innerText = trackerStats;
+        }
+        const lview = this._label('_ar_view');
+        if (lview !== null) {
+            const size = viewport.virtualSize;
+            lview.innerText = `${size.width}x${size.height} rendering`;
         }
     }
     /**
@@ -20059,13 +20080,33 @@ class StatsPanel {
      */
     _createTitle() {
         const title = document.createElement('div');
+        const button = document.createElement('button');
+        title.style.display = 'flex';
         title.style.backgroundColor = '#7e56c2';
         title.style.color = 'white';
         title.style.fontFamily = 'monospace';
         title.style.fontSize = '14px';
         title.style.fontWeight = 'bold';
-        title.style.padding = '2px';
+        title.style.paddingRight = '4px';
         title.innerText = 'encantar.js ' + AR.version;
+        button.style.width = '18px';
+        button.style.height = '18px';
+        button.style.marginRight = '4px';
+        button.style.backgroundColor = '#7e56c2';
+        button.style.backgroundImage = 'url(' + BUTTON_ICONS + ')';
+        button.style.backgroundRepeat = 'no-repeat';
+        button.style.backgroundPosition = '0 0';
+        button.style.borderWidth = '2px';
+        button.style.borderColor = '#b588fb #46346a #46346a #b588fb';
+        title.insertBefore(button, title.firstChild);
+        button.addEventListener('click', () => {
+            const container = title.parentNode;
+            const details = container && container.querySelector('._ar_details');
+            if (!details)
+                return;
+            details.hidden = !details.hidden;
+            button.style.backgroundPosition = details.hidden ? '0 0 ' : '-16px 0';
+        });
         return title;
     }
     /**
@@ -20074,24 +20115,133 @@ class StatsPanel {
      */
     _createContent() {
         const content = document.createElement('div');
-        const print = (html) => content.insertAdjacentHTML('beforeend', html);
+        const details = document.createElement('div');
         content.style.backgroundColor = 'rgba(0,0,0,0.5)';
         content.style.color = 'white';
         content.style.fontFamily = 'monospace';
         content.style.fontSize = '14px';
         content.style.padding = '2px';
         content.style.whiteSpace = 'pre-line';
+        details.classList.add('_ar_details');
+        details.hidden = true;
         // all sanitized
-        print('FPS: <span class="_ar_fps"></span> | ');
-        print('GPU: <span class="_ar_gpu"></span> ');
-        print('<span class="_ar_power"></span>');
-        print('<br>');
-        print('IN: <span class="_ar_in"></span>');
-        print('<br>');
-        print('OUT: <span class="_ar_out"></span>');
+        const append = (div, html) => div.insertAdjacentHTML('beforeend', html);
+        append(content, 'FPS: <span class="_ar_fps"></span> | ');
+        append(content, 'GPU: <span class="_ar_gpu"></span> ');
+        append(content, '<span class="_ar_power"></span>');
+        append(details, 'IN: <span class="_ar_in"></span><br>');
+        append(details, 'OUT: <span class="_ar_out"></span><br>');
+        append(details, 'VIEW: <span class="_ar_view"></span>');
+        // done!
+        content.appendChild(details);
         return content;
     }
 }
+
+;// CONCATENATED MODULE: ./src/trackers/image-tracker/settings.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * settings.ts
+ * Settings of the Image Tracker
+ */
+/** Maximum number of keypoints to be stored for each reference image when in the training state */
+const TRAIN_MAX_KEYPOINTS = 1024; //512;
+/** Percentage relative to the screen size adjusted to the aspect ratio of the reference image */
+const TRAIN_IMAGE_SCALE = 0.8; // ORB is not scale invariant
+/** Width and height of the Normalized Image Space (NIS) */
+const NIS_SIZE = 1024; // keypoint positions are stored as fixed point
+/** Used to identify the best maches */
+const SCAN_MATCH_RATIO = 0.7; // usually a value in [0.6, 0.8]
+/** Maximum number of keypoints to be analyzed when in the scanning state */
+const SCAN_MAX_KEYPOINTS = 512;
+/** Number of pyramid levels to be scanned by the corner detector when in the scanning & training states */
+const SCAN_PYRAMID_LEVELS = 4; //7;
+/** Scale factor between pyramid levels to be scanned by the corner detector when in the scanning & training states */
+const SCAN_PYRAMID_SCALEFACTOR = 1.19; // 2 ^ 0.25
+/** Threshold of the FAST corner detector used in the scanning/training states */
+const SCAN_FAST_THRESHOLD = 60;
+/** Minimum number of accepted matches for us to move out of the scanning state */
+const SCAN_MIN_MATCHES = 20; //30;
+/** When in the scanning state, we require the image to be matched during a few consecutive frames before accepting it */
+const SCAN_CONSECUTIVE_FRAMES = 30; //15;//45;
+/** Reprojection error, in NIS pixels, used when estimating a motion model (scanning state) */
+const SCAN_RANSAC_REPROJECTIONERROR_NIS = (NIS_SIZE * 0.0125) | 0;
+/** Reprojection error, in NDC, used when estimating a motion model (scanning state) */
+const SCAN_RANSAC_REPROJECTIONERROR_NDC = SCAN_RANSAC_REPROJECTIONERROR_NIS / (NIS_SIZE / 2);
+/** Number of tables used in the LSH-based keypoint matching */
+const SCAN_LSH_TABLES = 8; // up to 32
+/** Hash size, in bits, used in the LSH-based keypoint matching */
+const SCAN_LSH_HASHSIZE = 15; // up to 16
+/** Use the Nightvision filter when in the scanning/training state? */
+const SCAN_WITH_NIGHTVISION = true;
+/** Nightvision filter: gain */
+const NIGHTVISION_GAIN = 0.3; // 0.2;
+/** Nightvision filter: offset */
+const NIGHTVISION_OFFSET = 0.5;
+/** Nightvision filter: decay */
+const NIGHTVISION_DECAY = 0.0;
+/** Nightvision filter: quality level */
+const NIGHTVISION_QUALITY = 'low';
+/** Kernel size (square) of the Gaussian filter applied before computing the ORB descriptors */
+const ORB_GAUSSIAN_KSIZE = 9;
+/** Sigma of the Gaussian filter applied before computing the ORB descriptors */
+const ORB_GAUSSIAN_SIGMA = 2.0;
+/** Kernel size (square) of the Gaussian filter applied before subpixel refinement for noise reduction */
+const SUBPIXEL_GAUSSIAN_KSIZE = 5;
+/** Sigma of the Gaussian filter applied before subpixel refinement for noise reduction */
+const SUBPIXEL_GAUSSIAN_SIGMA = 1.0;
+/** Subpixel refinement method */
+const SUBPIXEL_METHOD = 'bilinear-upsample'; // 'quadratic1d';
+/** Minimum acceptable number of matched keypoints when in a pre-tracking state */
+const PRE_TRACK_MIN_MATCHES = 4;
+/** Maximum number of iterations in Pre-tracking B */
+const PRE_TRACK_MAX_ITERATIONS = 3;
+/** Reprojection error, in NIS pixels, used when pre-tracking */
+const PRE_TRACK_RANSAC_REPROJECTIONERROR_NIS = (NIS_SIZE * 0.0125 * 0.5) | 0;
+/** Reprojection error, in NDC, used when pre-tracking */
+const PRE_TRACK_RANSAC_REPROJECTIONERROR_NDC = PRE_TRACK_RANSAC_REPROJECTIONERROR_NIS / (NIS_SIZE / 2);
+/** Minimum acceptable number of matched keypoints when in the tracking state */
+const TRACK_MIN_MATCHES = 4; //10; //20;
+/** Maximum number of keypoints to be analyzed in the tracking state */
+const TRACK_MAX_KEYPOINTS = 200; //400; // <-- impacts performance!
+/** Capacity of the keypoint detector used in the the tracking state */
+const TRACK_DETECTOR_CAPACITY = 2048; //4096;
+/** Quality of the Harris/Shi-Tomasi corner detector */
+const TRACK_HARRIS_QUALITY = 0.005; // get a lot of keypoints
+/** Use the Nightvision filter when in the tracking state? */
+const TRACK_WITH_NIGHTVISION = false; // produces shaking?
+/** Relative size (%) of the (top, right, bottom, left) borders of the rectified image */
+const TRACK_RECTIFIED_BORDER = 0.15; //0.20;
+/** Relative size (%) used to clip keypoints from the borders of the rectified image */
+const TRACK_CLIPPING_BORDER = TRACK_RECTIFIED_BORDER * 1.20; //1.25; //1.15;
+/** Scale of the rectified image in NDC, without taking the aspect ratio into consideration */
+const TRACK_RECTIFIED_SCALE = 1 - 2 * TRACK_RECTIFIED_BORDER;
+/** Reprojection error, in NIS pixels, used when estimating a motion model (tracking state) */
+const TRACK_RANSAC_REPROJECTIONERROR_NIS = (NIS_SIZE * 0.0125) | 0;
+/** Reprojection error, in NDC, used when estimating a motion model (tracking state) */
+const TRACK_RANSAC_REPROJECTIONERROR_NDC = TRACK_RANSAC_REPROJECTIONERROR_NIS / (NIS_SIZE / 2);
+/** We use a N x N grid to spatially distribute the keypoints in order to compute a better homography */
+const TRACK_GRID_GRANULARITY = 10; //20; // the value of N
+/** Used to identify the best maches */
+const TRACK_MATCH_RATIO = 0.75; // usually a value in [0.6, 0.8] - low values => strict tracking
+/** Number of consecutive frames in which we tolerate a  "target lost" situation */
+const TRACK_LOST_TOLERANCE = 15;
 
 ;// CONCATENATED MODULE: ./src/ui/gizmos.ts
 /*
@@ -20116,8 +20266,6 @@ class StatsPanel {
  * Visual cues for testing & debugging
  */
 
-/** The maximum match distance ratio we'll consider to be "good" */
-const GOOD_MATCH_THRESHOLD = 0.7;
 /**
  * Visual cues for testing & debugging
  */
@@ -20127,6 +20275,7 @@ class Gizmos {
      */
     constructor() {
         this._visible = false;
+        this._imageTrackerGizmos = new ImageTrackerGizmos();
     }
     /**
      * Whether or not the gizmos will be rendered
@@ -20150,85 +20299,101 @@ class Gizmos {
         // no need to render?
         if (!this._visible)
             return;
-        // viewport
-        const viewportSize = viewport._realSize;
+        // render the gizmos of each tracker
+        for (let i = 0; i < trackers.length; i++) {
+            if (trackers[i].type == 'image-tracker') {
+                const output = trackers[i]._output;
+                this._imageTrackerGizmos.render(viewport, output);
+            }
+        }
+    }
+}
+/**
+ * Gizmos renderer of Image Trackers
+ */
+class ImageTrackerGizmos {
+    /**
+     * Render gizmos
+     * @param viewport viewport
+     * @param output tracker output
+     */
+    render(viewport, output) {
         const canvas = viewport._backgroundCanvas;
         const ctx = canvas.getContext('2d', { alpha: false });
         if (!ctx)
-            throw new IllegalOperationError();
+            return;
+        const viewportSize = viewport._realSize;
+        const keypointsNIS = output.keypointsNIS;
+        const polylineNDC = output.polylineNDC;
+        const camera = output.camera;
         // debug
         //ctx.fillStyle = '#000';
         //ctx.fillRect(0, 0, canvas.width, canvas.height);
         //ctx.clearRect(0, 0, canvas.width, canvas.height);
         // render keypoints
-        for (let i = 0; i < trackers.length; i++) {
-            if (trackers[i].type != 'image-tracker')
-                continue;
-            const output = trackers[i]._output;
-            const keypoints = output.keypoints;
-            const screenSize = output.screenSize;
-            if (keypoints !== undefined && screenSize !== undefined)
-                this._splitAndRenderKeypoints(ctx, keypoints, screenSize, viewportSize);
-        }
+        if (keypointsNIS !== undefined)
+            this._splitAndRenderKeypointsNIS(ctx, keypointsNIS, viewportSize);
         // render polylines
-        for (let i = 0; i < trackers.length; i++) {
-            if (trackers[i].type != 'image-tracker')
-                continue;
-            const output = trackers[i]._output;
-            const polyline = output.polyline;
-            const screenSize = output.screenSize;
-            if (polyline !== undefined && screenSize !== undefined)
-                this._renderPolyline(ctx, polyline, screenSize, viewportSize);
-        }
+        if (polylineNDC !== undefined)
+            this._renderPolylineNDC(ctx, polylineNDC, viewportSize);
         // render the axes of the 3D coordinate system
-        for (let i = 0; i < trackers.length; i++) {
-            if (trackers[i].type != 'image-tracker')
-                continue;
-            const output = trackers[i]._output;
-            const cameraMatrix = output.cameraMatrix;
-            const screenSize = output.screenSize;
-            if (cameraMatrix !== undefined && screenSize !== undefined)
-                this._renderAxes(ctx, cameraMatrix, screenSize, viewportSize);
-        }
+        if (camera !== undefined)
+            this._renderAxes(ctx, camera, viewportSize);
     }
     /**
      * Split keypoints in matched/unmatched categories and
      * render them for testing & development purposes
      * @param ctx canvas 2D context
-     * @param keypoints keypoints to render
-     * @param screenSize AR screen size
+     * @param keypoints keypoints in Normalized Image Space (NIS)
      * @param viewportSize viewport size
      * @param size base keypoint rendering size
      */
-    _splitAndRenderKeypoints(ctx, keypoints, screenSize, viewportSize, size = 1) {
+    _splitAndRenderKeypointsNIS(ctx, keypoints, viewportSize, size = 1) {
         if (keypoints.length == 0)
             return;
         if (!Object.prototype.hasOwnProperty.call(keypoints[0], '_matches')) { // hack...
-            this._renderKeypoints(ctx, keypoints, screenSize, viewportSize, '#f00', size);
+            this._renderKeypointsNIS(ctx, keypoints, viewportSize, '#f00', size);
             return;
         }
-        const isGoodMatch = (keypoint) => (keypoint.matches.length == 1 && keypoint.matches[0].index >= 0) ||
-            (keypoint.matches.length > 1 &&
-                keypoint.matches[0].index >= 0 && keypoint.matches[1].index >= 0 &&
+        const goodMatches = [], badMatches = [];
+        for (let i = 0; i < keypoints.length; i++) {
+            const keypoint = keypoints[i];
+            if (this._isGoodMatch(keypoint))
+                goodMatches.push(keypoint);
+            else
+                badMatches.push(keypoint);
+        }
+        this._renderKeypointsNIS(ctx, badMatches, viewportSize, '#f00', size);
+        this._renderKeypointsNIS(ctx, goodMatches, viewportSize, '#0f0', size);
+    }
+    /**
+     * Check if a matched keypoint is "good enough"
+     * @param keypoint matched keypoint
+     * @returns a boolean
+     */
+    _isGoodMatch(keypoint) {
+        const GOOD_MATCH_THRESHOLD = 0.7; // the maximum match distance ratio we'll consider to be "good"
+        const n = keypoint.matches.length;
+        if (n > 1) {
+            return (keypoint.matches[0].index >= 0 &&
+                keypoint.matches[1].index >= 0 &&
                 keypoint.matches[0].distance <= GOOD_MATCH_THRESHOLD * keypoint.matches[1].distance);
-        const matchedKeypoints = keypoints;
-        const goodMatches = matchedKeypoints.filter(keypoint => isGoodMatch(keypoint));
-        const badMatches = matchedKeypoints.filter(keypoint => !isGoodMatch(keypoint));
-        this._renderKeypoints(ctx, badMatches, screenSize, viewportSize, '#f00', size);
-        this._renderKeypoints(ctx, goodMatches, screenSize, viewportSize, '#0f0', size);
+        }
+        else if (n == 1)
+            return keypoint.matches[0].index >= 0;
+        return false;
     }
     /**
      * Render keypoints for testing & development purposes
      * @param ctx canvas 2D context
-     * @param keypoints keypoints to render
-     * @param screenSize AR screen size
+     * @param keypoints keypoints in Normalized Image Space (NIS)
      * @param viewportSize viewport size
      * @param color color of the rendered keypoints
      * @param size base keypoint rendering size
      */
-    _renderKeypoints(ctx, keypoints, screenSize, viewportSize, color = 'red', size = 1) {
-        const sx = viewportSize.width / screenSize.width;
-        const sy = viewportSize.height / screenSize.height;
+    _renderKeypointsNIS(ctx, keypoints, viewportSize, color = 'red', size = 1) {
+        const sx = viewportSize.width / NIS_SIZE;
+        const sy = viewportSize.height / NIS_SIZE;
         ctx.beginPath();
         for (let i = keypoints.length - 1; i >= 0; i--) {
             const keypoint = keypoints[i];
@@ -20242,25 +20407,23 @@ class Gizmos {
         ctx.stroke();
     }
     /**
-     * Render polyline for testing & development purposes
+     * Render a polyline for testing & development purposes
      * @param ctx canvas 2D context
-     * @param polyline vertices
-     * @param screenSize AR screen size
+     * @param polyline vertices in NDC
      * @param viewportSize viewport size
      * @param color color of the rendered polyline
      * @param lineWidth
      */
-    _renderPolyline(ctx, polyline, screenSize, viewportSize, color = '#0f0', lineWidth = 2) {
-        if (polyline.length == 0)
-            return;
+    _renderPolylineNDC(ctx, polyline, viewportSize, color = '#0f0', lineWidth = 2) {
         const n = polyline.length;
-        const sx = viewportSize.width / screenSize.width;
-        const sy = viewportSize.height / screenSize.height;
-        // render polyline
+        const w = viewportSize.width;
+        const h = viewportSize.height;
+        if (n == 0)
+            return;
         ctx.beginPath();
-        ctx.moveTo(polyline[n - 1].x * sx, polyline[n - 1].y * sy);
+        ctx.moveTo((polyline[n - 1].x * 0.5 + 0.5) * w, (polyline[n - 1].y * -0.5 + 0.5) * h);
         for (let j = 0; j < n; j++)
-            ctx.lineTo(polyline[j].x * sx, polyline[j].y * sy);
+            ctx.lineTo((polyline[j].x * 0.5 + 0.5) * w, (polyline[j].y * -0.5 + 0.5) * h);
         ctx.strokeStyle = color;
         ctx.lineWidth = lineWidth;
         ctx.stroke();
@@ -20268,20 +20431,21 @@ class Gizmos {
     /**
      * Render the axes of a 3D coordinate system
      * @param ctx canvas 2D context
-     * @param cameraMatrix 3x4 camera matrix that maps normalized coordinates [-1,1]^3 to AR screen space
-     * @param screenSize AR screen size
+     * @param camera camera model
      * @param viewportSize viewport size
      * @param lineWidth
      */
-    _renderAxes(ctx, cameraMatrix, screenSize, viewportSize, lineWidth = 4) {
+    _renderAxes(ctx, camera, viewportSize, lineWidth = 4) {
         const RED = '#f00', GREEN = '#0f0', BLUE = '#00f';
         const color = [RED, GREEN, BLUE]; // color of each axis: (X,Y,Z)
         const length = 1; // length of each axis-corresponding line, given in normalized space units
-        const sx = viewportSize.width / screenSize.width;
-        const sy = viewportSize.height / screenSize.height;
+        const w = viewportSize.width;
+        const h = viewportSize.height;
+        const iw = 1 / (camera.imageSize.width / 2);
+        const ih = -1 / (camera.imageSize.height / 2);
         /*
 
-        Multiply the 3x4 camera matrix P by:
+        Multiply the 3x4 camera matrix by:
 
         [ 0  L  0  0 ]
         [ 0  0  L  0 ] , where L = length in normalized space of the lines
@@ -20294,7 +20458,7 @@ class Gizmos {
         Note: we're working with homogeneous coordinates
 
         */
-        const p = cameraMatrix.read();
+        const p = camera.matrix.read();
         const l = length;
         const o = [p[9], p[10], p[11]]; // origin of the coordinate system
         const x = [l * p[0] + p[9], l * p[1] + p[10], l * p[2] + p[11]]; // x-axis
@@ -20307,8 +20471,8 @@ class Gizmos {
             const q = axis[i];
             const x = q[0] / q[2], y = q[1] / q[2];
             ctx.beginPath();
-            ctx.moveTo(ox * sx, oy * sy);
-            ctx.lineTo(x * sx, y * sy);
+            ctx.moveTo((ox * iw * 0.5 + 0.5) * w, (oy * ih * 0.5 + 0.5) * h);
+            ctx.lineTo((x * iw * 0.5 + 0.5) * w, (y * ih * 0.5 + 0.5) * h);
             ctx.strokeStyle = color[i];
             ctx.lineWidth = lineWidth;
             ctx.stroke();
@@ -20367,7 +20531,7 @@ class Frame {
     }
 }
 
-;// CONCATENATED MODULE: ./src/core/time.ts
+;// CONCATENATED MODULE: ./src/core/time-manager.ts
 /*
  * encantar.js
  * GPU-accelerated Augmented Reality for the web
@@ -20386,13 +20550,13 @@ class Frame {
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * time.ts
- * Time utilities
+ * time-manager.ts
+ * Time Manager
  */
 /**
  * Time Manager
  */
-class Time {
+class TimeManager {
     constructor() {
         /** time scale */
         this._scale = 1;
@@ -20576,15 +20740,20 @@ class Session extends AREventTarget {
         this._active = true;
         this._frameReady = true; // no trackers at the moment
         this._rafQueue = [];
-        this._time = new Time();
+        this._time = new TimeManager();
         this._gizmos = new Gizmos();
         this._gizmos.visible = gizmos;
         // validate the mode
         if (mode != 'immersive' && mode != 'inline')
             throw new IllegalArgumentError(`Invalid session mode "${mode}"`);
+        // find the primary source of data
+        this._primarySource = this._findPrimarySource(sources);
         // setup the viewport
         this._viewport = viewport;
-        this._viewport._init(() => this.media.size, mode);
+        if (this._primarySource !== null)
+            this._viewport._init(() => this._primarySource._internalMedia.size, mode);
+        else
+            this._viewport._init(() => Utils.resolution('sm', window.innerWidth / window.innerHeight), mode);
         // setup the main loop
         this._setupUpdateLoop();
         this._setupRenderLoop();
@@ -20675,9 +20844,6 @@ class Session extends AREventTarget {
             return speedy_vision_default().Matrix.ready();
         }).then(() => {
             // validate sources of data
-            const videoSources = sources.filter(source => source._type == 'video');
-            if (videoSources.length != 1)
-                throw new IllegalArgumentError(`One video source of data must be provided`);
             for (let i = sources.length - 1; i >= 0; i--) {
                 if (sources.indexOf(sources[i]) < i)
                     throw new IllegalArgumentError(`Found repeated sources of data`);
@@ -20699,7 +20865,7 @@ class Session extends AREventTarget {
                     throw new IllegalArgumentError(`Found repeated trackers`);
             }
             // attach trackers and return the session
-            return speedy_vision_default().Promise.all(trackers.map(tracker => session._attachTracker(tracker))).then(() => session);
+            return speedy_vision_default().Promise.all(trackers.map(tracker => session._attachTracker(tracker))).then(() => session).catch(err => { throw err; });
         }).catch(err => {
             // log errors, if any
             Utils.error(`Can't start session: ${err.message}`);
@@ -20775,18 +20941,6 @@ class Session extends AREventTarget {
         }
     }
     /**
-     * The underlying media (generally a camera stream)
-     * @internal
-     */
-    get media() {
-        for (let i = this._sources.length - 1; i >= 0; i--) {
-            if (this._sources[i]._type == 'video')
-                return this._sources[i]._data;
-        }
-        // this shouldn't happen
-        throw new IllegalOperationError(`Invalid input source`);
-    }
-    /**
      * Session mode
      */
     get mode() {
@@ -20799,7 +20953,7 @@ class Session extends AREventTarget {
         return !this._active;
     }
     /**
-     * Time utilities
+     * Time Manager
      */
     get time() {
         return this._time;
@@ -20829,39 +20983,78 @@ class Session extends AREventTarget {
         return this._sources[Symbol.iterator]();
     }
     /**
+     * Find the primary source of data (generally a camera stream)
+     * @param sources
+     * @returns the primary source, or null if there isn't any
+     */
+    _findPrimarySource(sources) {
+        // prefer video sources
+        for (let i = 0; i < sources.length; i++) {
+            if (sources[i]._type == 'video')
+                return sources[i];
+        }
+        for (let i = 0; i < sources.length; i++) {
+            if (sources[i]._type == 'canvas')
+                return sources[i];
+        }
+        // emit warning
+        Utils.warning(`No primary source of data was found!`);
+        return null;
+    }
+    /**
      * Attach a tracker to the session
      * @param tracker
+     * @returns a promise that resolves as soon as the tracker is attached and initialized
      */
     _attachTracker(tracker) {
         if (this._trackers.indexOf(tracker) >= 0)
-            throw new IllegalArgumentError(`Duplicate tracker attached to the session`);
+            return speedy_vision_default().Promise.reject(new IllegalArgumentError(`Duplicate tracker attached to the session`));
         else if (!this._active)
-            throw new IllegalOperationError(`Inactive session`);
+            return speedy_vision_default().Promise.reject(new IllegalOperationError(`Inactive session`));
         this._trackers.push(tracker);
         return tracker._init(this);
     }
     /**
-     * Render the user media to the background canvas
+     * Render content to the background canvas
      */
-    _renderUserMedia() {
+    _renderBackground() {
         const canvas = this._viewport._backgroundCanvas;
         const ctx = canvas.getContext('2d', { alpha: false });
-        if (ctx && this.media.type != 'data') {
-            ctx.imageSmoothingEnabled = false;
-            // draw user media
-            const image = this.media.source;
-            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-            // render output image(s)
-            for (let i = 0; i < this._trackers.length; i++) {
-                const media = this._trackers[i]._output.image;
-                if (media !== undefined) {
-                    const image = media.source;
-                    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-                    //ctx.drawImage(image, canvas.width - media.width, canvas.height - media.height, media.width, media.height);
-                }
-            }
-            // render gizmos
-            this._gizmos._render(this._viewport, this._trackers);
+        // error?
+        if (!ctx)
+            return;
+        ctx.imageSmoothingEnabled = false;
+        // render user media
+        if (this._primarySource !== null) {
+            const media = this._primarySource._internalMedia;
+            this._renderMedia(ctx, media, true);
+        }
+        // render output image(s) for debugging
+        for (let i = 0; i < this._trackers.length; i++) {
+            const media = this._trackers[i]._output.image;
+            if (media !== undefined)
+                this._renderMedia(ctx, media, false);
+        }
+        // render gizmos
+        this._gizmos._render(this._viewport, this._trackers);
+    }
+    /**
+     * Render a SpeedyMedia
+     * @param ctx rendering context
+     * @param media
+     * @param stretch
+     */
+    _renderMedia(ctx, media, stretch) {
+        const canvas = ctx.canvas;
+        const width = stretch ? canvas.width : media.width;
+        const height = stretch ? canvas.height : media.height;
+        if (media.type != 'data') {
+            const image = media.source;
+            ctx.drawImage(image, 0, 0, width, height);
+        }
+        else {
+            const image = media.source;
+            ctx.putImageData(image, 0, 0, 0, 0, width, height);
         }
     }
     /**
@@ -20962,15 +21155,15 @@ class Session extends AREventTarget {
                 // clone & clear the RAF queue
                 const rafQueue = this._rafQueue.slice(0);
                 this._rafQueue.length = 0;
-                // render user media
+                // render content to the background canvas
                 if (!skipUserMedia)
-                    this._renderUserMedia();
+                    this._renderBackground();
                 // render frame
                 for (let i = 0; i < rafQueue.length; i++)
                     rafQueue[i][1].call(undefined, time, frame);
                 // update internals
                 this._renderStats.update();
-                this._statsPanel.update(time, this._trackers, this._sources, this._updateStats.cyclesPerSecond, this._renderStats.cyclesPerSecond);
+                this._statsPanel.update(time, this._sources, this._trackers, this._viewport, this._updateStats.cyclesPerSecond, this._renderStats.cyclesPerSecond);
                 this._frameReady = false;
             }
             else {
@@ -21062,6 +21255,85 @@ class Settings {
 }
 Settings._powerPreference = 'default';
 
+;// CONCATENATED MODULE: ./src/trackers/image-tracker/reference-image.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * reference-image.ts
+ * Reference Image for tracking
+ */
+/**
+ * A ReferenceImage decorated with a SpeedyMedia
+ */
+class ReferenceImageWithMedia {
+    /**
+     * Constructor
+     * @param referenceImage
+     * @param media
+     */
+    constructor(referenceImage, media) {
+        this._referenceImage = Object.assign({}, referenceImage);
+        this._media = media;
+        // generate a unique name if none is given
+        if (this._referenceImage.name === undefined)
+            this._referenceImage.name = this._generateUniqueName();
+        // store the aspect ratio
+        this._aspectRatio = media.width / media.height;
+    }
+    /**
+     * Getter of the name of the reference image
+     */
+    get name() {
+        return this._referenceImage.name;
+    }
+    /**
+     * Setter of the name of the reference image
+     */
+    set name(name) {
+        this._referenceImage.name = name;
+    }
+    /**
+     * Image data
+     */
+    get image() {
+        return this._referenceImage.image;
+    }
+    /**
+     * A SpeedyMedia corresponding to the reference media
+     */
+    get media() {
+        return this._media;
+    }
+    /**
+     * The aspect ratio of the reference image
+     */
+    get aspectRatio() {
+        return this._aspectRatio;
+    }
+    /**
+     * Generate a unique name for a reference image
+     * @returns a unique name
+     */
+    _generateUniqueName() {
+        return 'target-' + Math.random().toString(16).substr(2);
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/trackers/image-tracker/reference-image-database.ts
 /*
  * encantar.js
@@ -21087,13 +21359,12 @@ Settings._powerPreference = 'default';
 
 
 
+
 /** Default capacity of a Reference Image Database */
 const DEFAULT_CAPACITY = 100; // this number should exceed normal usage
 // XXX this number may be changed (is 100 too conservative?)
 // further testing is needed to verify the appropriateness of this number;
 // it depends on the images, on the keypoint descriptors, and even on the target devices
-/** Generate a unique name for a reference image */
-const generateUniqueName = () => 'target-' + Math.random().toString(16).substr(2);
 /**
  * A collection of Reference Images
  */
@@ -21103,15 +21374,14 @@ class ReferenceImageDatabase {
      */
     constructor() {
         this._capacity = DEFAULT_CAPACITY;
-        this._database = [];
+        this._entries = new Map();
         this._locked = false;
-        this._busy = false;
     }
     /**
      * The number of reference images stored in this database
      */
     get count() {
-        return this._database.length;
+        return this._entries.size;
     }
     /**
      * Maximum number of elements
@@ -21132,9 +21402,8 @@ class ReferenceImageDatabase {
     /**
      * Iterates over the collection
      */
-    *[Symbol.iterator]() {
-        const ref = this._database.map(entry => entry.referenceImage);
-        yield* ref;
+    [Symbol.iterator]() {
+        return this._entries.values();
     }
     /**
      * Add reference images to this database
@@ -21145,159 +21414,80 @@ class ReferenceImageDatabase {
      * @returns a promise that resolves as soon as the images are loaded and added to this database
      */
     add(referenceImages) {
-        // handle no input
-        if (referenceImages.length == 0)
-            return speedy_vision_default().Promise.resolve();
-        // handle multiple images as input
-        if (referenceImages.length > 1) {
-            const promises = referenceImages.map(image => this.add([image]));
-            return Utils.runInSequence(promises);
-        }
-        // handle a single image as input
-        const referenceImage = referenceImages[0];
-        // locked database?
-        if (this._locked)
-            throw new IllegalOperationError(`Can't add reference image "${referenceImage.name}" to the database: it's locked`);
-        // busy loading another image?
-        if (this._busy)
-            return Utils.wait(4).then(() => this.add(referenceImages)); // try again later
-        // reached full capacity?
-        if (this.count >= this.capacity)
-            throw new IllegalOperationError(`Can't add reference image "${referenceImage.name}" to the database: the capacity of ${this.capacity} images has been exceeded.`);
-        // check if the image is valid
-        if (!(referenceImage.image instanceof HTMLImageElement) && !(referenceImage.image instanceof HTMLCanvasElement) && !(referenceImage.image instanceof ImageBitmap))
-            throw new IllegalArgumentError(`Can't add reference image "${referenceImage.name}" to the database: invalid image`);
-        // check for duplicate names
-        if (this._database.find(entry => entry.referenceImage.name === referenceImage.name) !== undefined)
-            throw new IllegalArgumentError(`Can't add reference image "${referenceImage.name}" to the database: found duplicated name`);
-        // load the media and add the reference image to the database
-        this._busy = true;
-        return speedy_vision_default().load(referenceImage.image).then(media => {
-            this._busy = false;
-            this._database.push({
-                referenceImage: Object.freeze(Object.assign(Object.assign({}, referenceImage), { name: referenceImage.name || generateUniqueName() })),
-                media: media
+        return this._preloadMany(referenceImages).then(referenceImagesWithMedia => {
+            referenceImagesWithMedia.forEach(referenceImageWithMedia => {
+                this._addOne(referenceImageWithMedia);
             });
         });
+    }
+    /**
+     * Add a single preloaded reference image to the database
+     * @param referenceImage
+     */
+    _addOne(referenceImage) {
+        const name = referenceImage.name;
+        // locked database?
+        if (this._locked)
+            throw new IllegalOperationError(`Can't add reference image "${name}" to the database: it's locked`);
+        // reached full capacity?
+        if (this.count >= this.capacity)
+            throw new IllegalOperationError(`Can't add reference image "${name}" to the database: the capacity of ${this.capacity} images has been exceeded.`);
+        // check if the image is valid
+        if (!(referenceImage.image instanceof HTMLImageElement) &&
+            !(referenceImage.image instanceof ImageBitmap) &&
+            !(referenceImage.image instanceof ImageData))
+            throw new IllegalArgumentError(`Can't add reference image "${name}" to the database: invalid image`);
+        // check for duplicate names
+        if (this._entries.has(name))
+            throw new IllegalArgumentError(`Can't add reference image "${name}" to the database: found duplicated name`);
+        // add the reference image to the database
+        Utils.log(`Adding reference image "${name}" to the database...`);
+        this._entries.set(name, referenceImage);
     }
     /**
      * Lock the database, so that new reference images can no longer be added to it
      * @internal
      */
     _lock() {
-        if (this._busy)
-            throw new IllegalOperationError(`Can't lock the reference image database: we're busy loading an image`);
         this._locked = true;
     }
     /**
-     * Get the media object associated to a reference image
-     * @param name reference image name
-     * @returns media
+     * Get reference image by name
+     * @param name
+     * @returns the reference image with the given name, or null if there isn't any
      * @internal
      */
-    _findMedia(name) {
-        for (let i = 0; i < this._database.length; i++) {
-            if (this._database[i].referenceImage.name === name)
-                return this._database[i].media;
-        }
-        throw new IllegalArgumentError(`Can't find reference image "${name}"`);
+    _find(name) {
+        return this._entries.get(name) || null;
+    }
+    /**
+     * Load a reference image
+     * @param referenceImage
+     * @returns a promise that resolves to a corresponding ReferenceImageWithMedia
+     */
+    _preloadOne(referenceImage) {
+        if (referenceImage.name !== undefined)
+            Utils.log(`Loading reference image \"${referenceImage.name}\"...`);
+        else
+            Utils.log(`Loading reference image...`);
+        if (!referenceImage.image)
+            return speedy_vision_default().Promise.reject(new IllegalArgumentError('The reference image was not provided!'));
+        return speedy_vision_default().load(referenceImage.image).then(media => {
+            return new ReferenceImageWithMedia(referenceImage, media);
+        });
+    }
+    /**
+     * Load multiple reference images
+     * @param referenceImages
+     * @returns a promise that resolves to corresponding ReferenceImageWithMedia objects
+     */
+    _preloadMany(referenceImages) {
+        const n = referenceImages.length;
+        Utils.log(`Loading ${n} reference image${n != 1 ? 's' : ''}...`);
+        const promises = referenceImages.map(referenceImage => this._preloadOne(referenceImage));
+        return speedy_vision_default().Promise.all(promises);
     }
 }
-
-;// CONCATENATED MODULE: ./src/trackers/image-tracker/settings.ts
-/*
- * encantar.js
- * GPU-accelerated Augmented Reality for the web
- * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- *
- * settings.ts
- * Settings of the Image Tracker
- */
-/** Default tracking resolution */
-const DEFAULT_TRACKING_RESOLUTION = 'sm';
-/** Maximum number of keypoints to be stored for each reference image when in the training state */
-const TRAIN_MAX_KEYPOINTS = 1024; //512;
-/** Percentage relative to the screen size adjusted to the aspect ratio of the reference image */
-const TRAIN_IMAGE_SCALE = 0.8; // ORB is not scale invariant
-/** Normalized width & height of an image target, in pixels */
-const TRAIN_TARGET_NORMALIZED_SIZE = 1024; // keypoint positions are stored as fixed point
-/** Used to identify the best maches */
-const SCAN_MATCH_RATIO = 0.7; // usually a value in [0.6, 0.8]
-/** Maximum number of keypoints to be analyzed when in the scanning state */
-const SCAN_MAX_KEYPOINTS = 512;
-/** Number of pyramid levels to be scanned by the corner detector when in the scanning & training states */
-const SCAN_PYRAMID_LEVELS = 4; //7;
-/** Scale factor between pyramid levels to be scanned by the corner detector when in the scanning & training states */
-const SCAN_PYRAMID_SCALEFACTOR = 1.19; // 2 ^ 0.25
-/** Threshold of the FAST corner detector used in the scanning/training states */
-const SCAN_FAST_THRESHOLD = 60;
-/** Minimum number of accepted matches for us to move out from the scanning state */
-const SCAN_MIN_MATCHES = 20; //30;
-/** When in the scanning state, we require the image to be matched during a few consecutive frames before accepting it */
-const SCAN_CONSECUTIVE_FRAMES = 30; //15;//45;
-/** Reprojection error, in pixels, used when estimating a motion model (scanning state) */
-const SCAN_RANSAC_REPROJECTIONERROR = 5;
-/** Number of tables used in the LSH-based keypoint matching */
-const SCAN_LSH_TABLES = 8; // up to 32
-/** Hash size, in bits, used in the LSH-based keypoint matching */
-const SCAN_LSH_HASHSIZE = 15; // up to 16
-/** Use the Nightvision filter when in the scanning/training state? */
-const SCAN_WITH_NIGHTVISION = true;
-/** Nightvision filter: gain */
-const NIGHTVISION_GAIN = 0.3; // 0.2;
-/** Nightvision filter: offset */
-const NIGHTVISION_OFFSET = 0.5;
-/** Nightvision filter: decay */
-const NIGHTVISION_DECAY = 0.0;
-/** Nightvision filter: quality level */
-const NIGHTVISION_QUALITY = 'low';
-/** Kernel size (square) of the Gaussian filter applied before computing the ORB descriptors */
-const ORB_GAUSSIAN_KSIZE = 9;
-/** Sigma of the Gaussian filter applied before computing the ORB descriptors */
-const ORB_GAUSSIAN_SIGMA = 2.0;
-/** Kernel size (square) of the Gaussian filter applied before subpixel refinement for noise reduction */
-const SUBPIXEL_GAUSSIAN_KSIZE = 5;
-/** Sigma of the Gaussian filter applied before subpixel refinement for noise reduction */
-const SUBPIXEL_GAUSSIAN_SIGMA = 1.0;
-/** Subpixel refinement method */
-const SUBPIXEL_METHOD = 'bilinear-upsample'; // 'quadratic1d';
-/** Minimum acceptable number of matched keypoints when in the tracking state */
-const TRACK_MIN_MATCHES = 4; //10; //20;
-/** Maximum number of keypoints to be analyzed in the tracking state */
-const TRACK_MAX_KEYPOINTS = 200; //400; // <-- impacts performance!
-/** Capacity of the keypoint detector used in the the tracking state */
-const TRACK_DETECTOR_CAPACITY = 2048; //4096;
-/** Quality of the Harris/Shi-Tomasi corner detector */
-const TRACK_HARRIS_QUALITY = 0.005; // get a lot of keypoints
-/** Use the Nightvision filter when in the tracking state? */
-const TRACK_WITH_NIGHTVISION = false; // produces shaking?
-/** Relative size (%) of the (top, right, bottom, left) borders of the rectified image */
-const TRACK_RECTIFIED_BORDER = 0.15; //0.20;
-/** Relative size (%) used to clip keypoints from the borders of the rectified image */
-const TRACK_CLIPPING_BORDER = TRACK_RECTIFIED_BORDER * 1.20; //1.25; //1.15;
-/** Number of iterations used to refine the target image before tracking */
-const TRACK_REFINEMENT_ITERATIONS = 3;
-/** Reprojection error, in pixels, used when estimating a motion model (tracking state) */
-const TRACK_RANSAC_REPROJECTIONERROR = 3; //2.5;
-/** We use a N x N grid to spatially distribute the keypoints in order to compute a better homography */
-const TRACK_GRID_GRANULARITY = 10; //20; // the value of N
-/** Used to identify the best maches */
-const TRACK_MATCH_RATIO = 0.75; // usually a value in [0.6, 0.8] - low values => strict tracking
-/** Number of consecutive frames in which we tolerate a  "target lost" situation */
-const TRACK_LOST_TOLERANCE = 10;
 
 ;// CONCATENATED MODULE: ./src/trackers/image-tracker/states/state.ts
 /*
@@ -21323,7 +21513,6 @@ const TRACK_LOST_TOLERANCE = 10;
  */
 
 
-
 /**
  * Abstract state of the Image Tracker
  */
@@ -21337,6 +21526,7 @@ class ImageTrackerState {
         this._name = name;
         this._imageTracker = imageTracker;
         this._pipeline = this._createPipeline();
+        this._pipelineReleased = false;
     }
     /**
      * State name
@@ -21346,6 +21536,7 @@ class ImageTrackerState {
     }
     /**
      * AR screen size
+     * It may change over time, as when flipping a phone
      */
     get screenSize() {
         const screen = this._pipeline.node('screen');
@@ -21363,7 +21554,11 @@ class ImageTrackerState {
      * Release resources
      */
     release() {
-        return this._pipeline.release();
+        if (!this._pipelineReleased) {
+            this._pipeline.release();
+            this._pipelineReleased = true;
+        }
+        return null;
     }
     /**
      * Update the state
@@ -21408,112 +21603,6 @@ class ImageTrackerState {
      */
     _gpuUpdate() {
         return this._pipeline.run();
-    }
-    //
-    // Some utility methods common to various states
-    //
-    /**
-     * Find the coordinates of a polyline surrounding the target image
-     * @param homography maps the target image to the AR screen
-     * @param targetSize size of the target space
-     * @returns promise that resolves to 4 points in AR screen space
-     */
-    _findPolylineCoordinates(homography, targetSize) {
-        const w = targetSize.width, h = targetSize.height;
-        const referenceImageCoordinates = speedy_vision_default().Matrix(2, 4, [
-            0, 0,
-            w, 0,
-            w, h,
-            0, h,
-        ]);
-        const polylineCoordinates = speedy_vision_default().Matrix.Zeros(2, 4);
-        return speedy_vision_default().Matrix.applyPerspectiveTransform(polylineCoordinates, referenceImageCoordinates, homography);
-    }
-    /**
-     * Find a polyline surrounding the target image
-     * @param homography maps the target image to the AR screen
-     * @param targetSize size of the target space
-     * @returns promise that resolves to 4 points in AR screen space
-     */
-    _findPolyline(homography, targetSize) {
-        return this._findPolylineCoordinates(homography, targetSize).then(polylineCoordinates => {
-            const polydata = polylineCoordinates.read();
-            const polyline = Array.from({ length: 4 }, (_, i) => speedy_vision_default().Point2(polydata[2 * i], polydata[2 * i + 1]));
-            return polyline;
-        });
-    }
-    /**
-     * Whether or not to rotate the warped image in order to best fit the AR screen
-     * @param media media associated with the reference image
-     * @param screenSize AR screen
-     * @returns boolean
-     */
-    _mustRotateWarpedImage(media, screenSize) {
-        const screenAspectRatio = screenSize.width / screenSize.height;
-        const mediaAspectRatio = media.width / media.height;
-        const eps = 0.1;
-        return (mediaAspectRatio >= 1 + eps && screenAspectRatio < 1 - eps) || (mediaAspectRatio < 1 - eps && screenAspectRatio >= 1 + eps);
-    }
-    /**
-     * Find a rectification matrix to be applied to an image fitting the entire AR screen
-     * @param media media associated with the reference image
-     * @param screenSize AR screen
-     * @returns promise that resolves to a rectification matrix
-     */
-    _findRectificationMatrixOfFullscreenImage(media, screenSize) {
-        const b = TRACK_RECTIFIED_BORDER;
-        const sw = screenSize.width, sh = screenSize.height;
-        const mediaAspectRatio = media.width / media.height;
-        const mustRotate = this._mustRotateWarpedImage(media, screenSize);
-        // compute the vertices of the target in screen space
-        // we suppose portrait or landscape mode for both screen & media
-        const c = mustRotate ? 1 / mediaAspectRatio : mediaAspectRatio;
-        const top = sw >= sh ? b * sh : (sh - sw * (1 - 2 * b) / c) / 2;
-        const left = sw >= sh ? (sw - sh * (1 - 2 * b) * c) / 2 : b * sw;
-        const right = sw - left;
-        const bottom = sh - top;
-        const targetVertices = speedy_vision_default().Matrix(2, 4, [
-            left, top,
-            right, top,
-            right, bottom,
-            left, bottom,
-        ]);
-        const screenVertices = speedy_vision_default().Matrix(2, 4, [
-            0, 0,
-            sw, 0,
-            sw, sh,
-            0, sh
-        ]);
-        const preRectificationMatrix = speedy_vision_default().Matrix.Eye(3);
-        const alignmentMatrix = speedy_vision_default().Matrix.Zeros(3);
-        const rectificationMatrix = speedy_vision_default().Matrix.Zeros(3);
-        return (mustRotate ? speedy_vision_default().Matrix.perspective(
-        // pre-rectifation: rotate by 90 degrees counterclockwise and scale to screenSize
-        preRectificationMatrix, screenVertices, speedy_vision_default().Matrix(2, 4, [0, sh, 0, 0, sw, 0, sw, sh])) : speedy_vision_default().Promise.resolve(preRectificationMatrix)).then(_ => 
-        // alignment: align the target to the center of the screen
-        speedy_vision_default().Matrix.perspective(alignmentMatrix, screenVertices, targetVertices)).then(_ => 
-        // pre-rectify and then align
-        rectificationMatrix.setTo(alignmentMatrix.times(preRectificationMatrix)));
-    }
-    /**
-     * Find a rectification matrix to be applied to the target image
-     * @param homography maps a reference image to the AR screen
-     * @param targetSize size of the target space
-     * @param media media associated with the reference image
-     * @param screenSize AR screen
-     * @returns promise that resolves to a rectification matrix
-     */
-    _findRectificationMatrixOfCameraImage(homography, targetSize, media, screenSize) {
-        const sw = screenSize.width, sh = screenSize.height;
-        const screen = speedy_vision_default().Matrix(2, 4, [0, 0, sw, 0, sw, sh, 0, sh]);
-        const rectificationMatrix = speedy_vision_default().Matrix.Zeros(3);
-        return this._findPolylineCoordinates(homography, targetSize).then(polyline => 
-        // from target space to (full)screen
-        speedy_vision_default().Matrix.perspective(rectificationMatrix, polyline, screen)).then(_ => 
-        // from (full)screen to rectified coordinates
-        this._findRectificationMatrixOfFullscreenImage(media, screenSize)).then(mat => 
-        // function composition
-        rectificationMatrix.setTo(mat.times(rectificationMatrix)));
     }
 }
 
@@ -21577,6 +21666,14 @@ class ImageTrackerInitialState extends ImageTrackerState {
             nextState: 'training',
             trackerOutput: {},
         });
+    }
+    /**
+     * Called when leaving the state, after update()
+     */
+    onLeaveState() {
+        // we don't return to this state, so we can release the pipeline early
+        this._pipeline.release();
+        this._pipelineReleased = true;
     }
     /**
      * Create & setup the pipeline
@@ -21673,6 +21770,344 @@ class ImageTrackerInitialState extends ImageTrackerState {
     }
 }
 
+;// CONCATENATED MODULE: ./src/trackers/image-tracker/image-tracker-utils.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * image-tracker-utils.ts
+ * Image Tracker: Utilities
+ */
+
+
+
+
+/**
+ * Utilities for the Image Tracker
+ */
+class ImageTrackerUtils {
+    /**
+     * Find a transformation that converts a raster space to NIS
+     * @param size size of the raster space
+     * @returns a 3x3 matrix
+     */
+    static rasterToNIS(size) {
+        const sx = NIS_SIZE / size.width;
+        const sy = NIS_SIZE / size.height;
+        return speedy_vision_default().Matrix(3, 3, [
+            sx, 0, 0,
+            0, sy, 0,
+            0, 0, 1
+        ]);
+    }
+    /**
+     * Find a transformation that converts a raster space to NDC
+     * @param size size of the raster space
+     * @returns a 3x3 matrix
+     */
+    static rasterToNDC(size) {
+        const w = size.width, h = size.height;
+        return speedy_vision_default().Matrix(3, 3, [
+            2 / w, 0, 0,
+            0, -2 / h, 0,
+            -1, 1, 1
+        ]);
+    }
+    /**
+     * Find a transformation that converts NDC to a raster space
+     * @param size size of the raster space
+     * @returns a 3x3 matrix
+     */
+    static NDCToRaster(size) {
+        const w = size.width, h = size.height;
+        return speedy_vision_default().Matrix(3, 3, [
+            w / 2, 0, 0,
+            0, -h / 2, 0,
+            w / 2, h / 2, 1
+        ]);
+    }
+    /**
+     * Find a transformation that scales points in NDC
+     * @param sx horizontal scale factor
+     * @param sy vertical scale factor
+     * @returns a 3x3 matrix
+     */
+    static scaleNDC(sx, sy = sx) {
+        // In NDC, the origin is at the center of the space!
+        return speedy_vision_default().Matrix(3, 3, [
+            sx, 0, 0,
+            0, sy, 0,
+            0, 0, 1
+        ]);
+    }
+    /**
+     * Find a scale transformation in NDC such that the output has a desired aspect ratio
+     * @param aspectRatio desired aspect ratio
+     * @param scale optional scale factor in both axes
+     * @returns a 3x3 matrix
+     */
+    static bestFitScaleNDC(aspectRatio, scale = 1) {
+        if (aspectRatio >= 1)
+            return this.scaleNDC(scale, scale / aspectRatio); // s/(s/a) = a, sx >= sy
+        else
+            return this.scaleNDC(scale * aspectRatio, scale); // (s*a)/s = a, sx < sy
+    }
+    /**
+     * Find the inverse matrix of bestFitScaleNDC()
+     * @param aspectRatio as given to bestFitScaleNDC()
+     * @param scale optional, as given to bestFitScaleNDC()
+     * @returns a 3x3 matrix
+     */
+    static inverseBestFitScaleNDC(aspectRatio, scale = 1) {
+        if (aspectRatio >= 1)
+            return this.scaleNDC(1 / scale, aspectRatio / scale);
+        else
+            return this.scaleNDC(1 / (scale * aspectRatio), 1 / scale);
+    }
+    /**
+     * Find the best-fit aspect ratio for the rectification of the reference image in NDC
+     * @param screenSize
+     * @param referenceImage
+     * @returns a best-fit aspect ratio
+     */
+    static bestFitAspectRatioNDC(screenSize, referenceImage) {
+        /*
+        
+        The best-fit aspectRatio (a) is constructed as follows:
+
+        1) a fully stretched(*) and distorted reference image in NDC:
+           a = 1
+
+        2) a square in NDC:
+           a = 1 / screenAspectRatio
+
+        3) an image with the aspect ratio of the reference image in NDC:
+           a = referenceImageAspectRatio * (1 / screenAspectRatio)
+
+        (*) AR screen space
+
+        By transforming the reference image twice, first by converting it to AR
+        screen space, and then by rectifying it, we lose a little bit of quality.
+        Nothing to be too concerned about, though?
+
+        */
+        const screenAspectRatio = screenSize.width / screenSize.height;
+        return referenceImage.aspectRatio / screenAspectRatio;
+    }
+    /**
+     * Given n > 0 pairs (src_i, dest_i) of keypoints in NIS,
+     * convert them to NDC and output a 2 x 2n matrix of the form:
+     * [ src_0.x  src_1.x  ... | dest_0.x  dest_1.x  ... ]
+     * [ src_0.y  src_1.y  ... | dest_0.y  dest_1.y  ... ]
+     * @param pairs pairs of keypoints in NIS
+     * @returns 2 x 2n matrix with two 2 x n blocks: [ src | dest ]
+     * @throws
+     */
+    static compilePairsOfKeypointsNDC(pairs) {
+        const n = pairs.length;
+        if (n == 0)
+            throw new IllegalArgumentError();
+        const scale = 2 / NIS_SIZE;
+        const data = new Array(2 * 2 * n);
+        for (let i = 0, j = 0, k = 2 * n; i < n; i++, j += 2, k += 2) {
+            const src = pairs[i][0];
+            const dest = pairs[i][1];
+            data[j] = src.x * scale - 1; // convert from NIS to NDC
+            data[j + 1] = 1 - src.y * scale; // flip y-axis
+            data[k] = dest.x * scale - 1;
+            data[k + 1] = 1 - dest.y * scale;
+        }
+        return speedy_vision_default().Matrix(2, 2 * n, data);
+    }
+    /**
+     * Given n > 0 pairs of keypoints in NDC as a 2 x 2n [ src | dest ] matrix,
+     * find a perspective warp (homography) from src to dest in NDC
+     * @param points compiled pairs of keypoints in NDC
+     * @param options to be passed to speedy-vision
+     * @returns a pair [ 3x3 transformation matrix, quality score ]
+     */
+    static findPerspectiveWarpNDC(points, options) {
+        // too few data points?
+        const n = points.columns / 2;
+        if (n < 4) {
+            return speedy_vision_default().Promise.reject(new IllegalArgumentError(`Too few data points to compute a perspective warp`));
+        }
+        // compute a homography
+        const src = points.block(0, 1, 0, n - 1);
+        const dest = points.block(0, 1, n, 2 * n - 1);
+        const mask = speedy_vision_default().Matrix.Zeros(1, n);
+        return speedy_vision_default().Matrix.findHomography(speedy_vision_default().Matrix.Zeros(3), src, dest, Object.assign({ mask }, options)).then(homography => {
+            // check if this is a valid warp
+            const a00 = homography.at(0, 0);
+            if (Number.isNaN(a00))
+                throw new NumericalError(`Can't compute a perspective warp: bad keypoints`);
+            // count the number of inliers
+            const inliers = mask.read();
+            let inlierCount = 0;
+            for (let i = inliers.length - 1; i >= 0; i--)
+                inlierCount += inliers[i];
+            const score = inlierCount / inliers.length;
+            // done!
+            return [homography, score];
+        });
+    }
+    /**
+     * Given n > 0 pairs of keypoints in NDC as a 2 x 2n [ src | dest ] matrix,
+     * find an affine warp from src to dest in NDC. The affine warp is given as
+     * a 3x3 matrix whose last row is [0 0 1]
+     * @param points compiled pairs of keypoints in NDC
+     * @param options to be passed to speedy-vision
+     * @returns a pair [ 3x3 transformation matrix, quality score ]
+     */
+    static findAffineWarpNDC(points, options) {
+        // too few data points?
+        const n = points.columns / 2;
+        if (n < 3) {
+            return speedy_vision_default().Promise.reject(new IllegalArgumentError(`Too few data points to compute an affine warp`));
+        }
+        // compute an affine transformation
+        const model = speedy_vision_default().Matrix.Eye(3);
+        const src = points.block(0, 1, 0, n - 1);
+        const dest = points.block(0, 1, n, 2 * n - 1);
+        const mask = speedy_vision_default().Matrix.Zeros(1, n);
+        return speedy_vision_default().Matrix.findAffineTransform(model.block(0, 1, 0, 2), // 2x3 submatrix
+        src, dest, Object.assign({ mask }, options)).then(_ => {
+            // check if this is a valid warp
+            const a00 = model.at(0, 0);
+            if (Number.isNaN(a00))
+                throw new NumericalError(`Can't compute an affine warp: bad keypoints`);
+            // count the number of inliers
+            const inliers = mask.read();
+            let inlierCount = 0;
+            for (let i = inliers.length - 1; i >= 0; i--)
+                inlierCount += inliers[i];
+            const score = inlierCount / inliers.length;
+            // done!
+            return [model, score];
+        });
+    }
+    /**
+     * Find a polyline in Normalized Device Coordinates (NDC)
+     * @param homography maps the corners of NDC to a quadrilateral in NDC
+     * @returns 4 points in NDC
+     */
+    static findPolylineNDC(homography) {
+        const h = homography.read();
+        const uv = [-1, +1, -1, -1, +1, -1, +1, +1]; // the corners of a reference image in NDC
+        const polyline = new Array(4);
+        for (let i = 0, j = 0; i < 4; i++, j += 2) {
+            const u = uv[j], v = uv[j + 1];
+            const x = h[0] * u + h[3] * v + h[6];
+            const y = h[1] * u + h[4] * v + h[7];
+            const w = h[2] * u + h[5] * v + h[8];
+            polyline[i] = speedy_vision_default().Point2(x / w, y / w);
+        }
+        return polyline;
+    }
+    /**
+     * Find a better spatial distribution of the input matches
+     * @param pairs in the [src, dest] format
+     * @returns refined pairs of quality matches
+     */
+    static refineMatchingPairs(pairs) {
+        // collect all keypoints obtained in this frame
+        const m = pairs.length;
+        const destKeypoints = new Array(m);
+        for (let j = 0; j < m; j++)
+            destKeypoints[j] = pairs[j][1];
+        // find a better spatial distribution of the keypoints
+        const indices = this._distributeKeypoints(destKeypoints);
+        // assemble output
+        const n = indices.length; // number of refined matches
+        const result = new Array(n);
+        for (let i = 0; i < n; i++)
+            result[i] = pairs[indices[i]];
+        // done!
+        return result;
+    }
+    /**
+     * Spatially distribute keypoints over a grid
+     * @param keypoints keypoints to be distributed
+     * @returns a list of indices of keypoints[]
+     */
+    static _distributeKeypoints(keypoints) {
+        // create a grid
+        const gridCells = TRACK_GRID_GRANULARITY; // number of grid elements in each axis
+        const numberOfCells = gridCells * gridCells;
+        const n = keypoints.length;
+        // get the coordinates of the keypoints
+        const points = new Array(2 * n);
+        for (let i = 0, j = 0; i < n; i++, j += 2) {
+            points[j] = keypoints[i].x;
+            points[j + 1] = keypoints[i].y;
+        }
+        // normalize the coordinates to [0,1) x [0,1)
+        this._normalizePoints(points);
+        // distribute the keypoints over the grid
+        const grid = new Array(numberOfCells).fill(-1);
+        for (let i = 0, j = 0; i < n; i++, j += 2) {
+            // find the grid location of the i-th point
+            const xg = Math.floor(points[j] * gridCells); // 0 <= xg,yg < gridCells
+            const yg = Math.floor(points[j + 1] * gridCells);
+            // store the index of the i-th point in the grid
+            const k = yg * gridCells + xg;
+            if (grid[k] < 0)
+                grid[k] = i;
+        }
+        // retrieve points of the grid
+        let m = 0;
+        const indices = new Array(numberOfCells);
+        for (let g = 0; g < numberOfCells; g++) {
+            if (grid[g] >= 0)
+                indices[m++] = grid[g];
+        }
+        indices.length = m;
+        // done!
+        return indices;
+    }
+    /**
+     * Normalize points to [0,1)^2
+     * @param points 2 x n matrix of points in column-major format
+     * @returns points
+     */
+    static _normalizePoints(points) {
+        Utils.assert(points.length % 2 == 0);
+        const n = points.length / 2;
+        if (n == 0)
+            return points;
+        let xmin = Number.POSITIVE_INFINITY, xmax = Number.NEGATIVE_INFINITY;
+        let ymin = Number.POSITIVE_INFINITY, ymax = Number.NEGATIVE_INFINITY;
+        for (let i = 0, j = 0; i < n; i++, j += 2) {
+            const x = points[j], y = points[j + 1];
+            xmin = x < xmin ? x : xmin;
+            ymin = y < ymin ? y : ymin;
+            xmax = x > xmax ? x : xmax;
+            ymax = y > ymax ? y : ymax;
+        }
+        const xlen = xmax - xmin + 1; // +1 is a correction factor, so that 0 <= x,y < 1
+        const ylen = ymax - ymin + 1;
+        for (let i = 0, j = 0; i < n; i++, j += 2) {
+            points[j] = (points[j] - xmin) / xlen;
+            points[j + 1] = (points[j + 1] - ymin) / ylen;
+        }
+        return points;
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/trackers/image-tracker/states/training.ts
 /*
  * encantar.js
@@ -21700,6 +22135,7 @@ class ImageTrackerInitialState extends ImageTrackerState {
 
 
 
+
 /**
  * Training state of the Image Tracker
  */
@@ -21710,13 +22146,13 @@ class ImageTrackerTrainingState extends ImageTrackerState {
      */
     constructor(imageTracker) {
         super('training', imageTracker);
+        /** index of the image being used to train the tracker */
         this._currentImageIndex = 0;
-        this._image = [];
         // initialize the training map
         this._trainingMap = {
+            keypoints: [],
             referenceImageIndex: [],
-            referenceImage: [],
-            keypoints: []
+            referenceImages: [],
         };
     }
     /**
@@ -21730,76 +22166,44 @@ class ImageTrackerTrainingState extends ImageTrackerState {
             throw new TrainingError(`Can't train the Image Tracker: the Reference Image Database is empty`);
         // prepare to train...
         this._currentImageIndex = 0;
-        this._image.length = 0;
-        this._trainingMap.referenceImageIndex.length = 0;
-        this._trainingMap.referenceImage.length = 0;
         this._trainingMap.keypoints.length = 0;
+        this._trainingMap.referenceImageIndex.length = 0;
+        this._trainingMap.referenceImages.length = 0;
         // lock the database
         Utils.log(`Image Tracker: training using ${database.count} reference image${database.count != 1 ? 's' : ''}`);
         database._lock();
         // collect all images
         for (const referenceImage of database)
-            this._image.push(referenceImage);
+            this._trainingMap.referenceImages.push(referenceImage);
+    }
+    /**
+     * Called when leaving the state, after update()
+     */
+    onLeaveState() {
+        // we don't return to this state, so we can release the pipeline early
+        this._pipeline.release();
+        this._pipelineReleased = true;
     }
     /**
      * Called just before the GPU processing
      * @returns promise
      */
     _beforeUpdate() {
-        const arScreenSize = this.screenSize;
         const source = this._pipeline.node('source');
         const screen = this._pipeline.node('screen');
         const keypointScaler = this._pipeline.node('keypointScaler');
-        // this shouldn't happen
-        if (this._currentImageIndex >= this._image.length)
-            return speedy_vision_default().Promise.reject(new IllegalOperationError());
         // set the appropriate training media
-        const database = this._imageTracker.database;
-        const referenceImage = this._image[this._currentImageIndex];
-        const media = database._findMedia(referenceImage.name);
-        source.media = media;
+        const referenceImage = this._trainingMap.referenceImages[this._currentImageIndex];
+        source.media = referenceImage.media;
         // compute the appropriate size of the training image space
         const resolution = this._imageTracker.resolution;
         const scale = TRAIN_IMAGE_SCALE; // ORB is not scale-invariant
-        const aspectRatioOfTrainingImage = media.width / media.height;
-        /*
-        let sin = 0, cos = 1;
-
-        if((aspectRatioOfSourceVideo - 1) * (aspectRatioOfTrainingImage - 1) >= 0) {
-            // training image and source video: both in landscape mode or both in portrait mode
-            screen.size = Utils.resolution(resolution, aspectRatioOfTrainingImage);
-            screen.size.width = Math.round(screen.size.width * scale);
-            screen.size.height = Math.round(screen.size.height * scale);
-        }
-        else if(aspectRatioOfTrainingImage > aspectRatioOfSourceVideo) {
-            // training image: portrait mode; source video: landscape mode
-            screen.size = Utils.resolution(resolution, 1 / aspectRatioOfTrainingImage);
-            screen.size.width = Math.round(screen.size.width * scale);
-            screen.size.height = Math.round(screen.size.height * scale);
-            sin = 1; cos = 0; // rotate 90deg
-        }
-        else {
-            // training image: landscape mode; source video: portrait mode
-        }
-        */
+        const aspectRatioOfTrainingImage = referenceImage.aspectRatio;
         screen.size = Utils.resolution(resolution, aspectRatioOfTrainingImage);
         screen.size.width = Math.round(screen.size.width * scale);
         screen.size.height = Math.round(screen.size.height * scale);
-        // convert keypoints from the training image space to AR screen space
-        // let's pretend that trained keypoints belong to the AR screen space,
-        // regardless of the size of the target image. This will make things
-        // easier when computing the homography.
-        /*
-        const sw = arScreenSize.width / screen.size.width;
-        const sh = arScreenSize.height / screen.size.height;
-        */
-        const sw = TRAIN_TARGET_NORMALIZED_SIZE / screen.size.width;
-        const sh = TRAIN_TARGET_NORMALIZED_SIZE / screen.size.height;
-        keypointScaler.transform = speedy_vision_default().Matrix(3, 3, [
-            sw, 0, 0,
-            0, sh, 0,
-            0, 0, 1,
-        ]);
+        // convert keypoints to NIS
+        keypointScaler.transform = ImageTrackerUtils.rasterToNIS(screen.size);
         // log
         Utils.log(`Image Tracker: training using reference image "${referenceImage.name}" at ${screen.size.width}x${screen.size.height}...`);
         // done!
@@ -21811,40 +22215,38 @@ class ImageTrackerTrainingState extends ImageTrackerState {
      * @returns state output
      */
     _afterUpdate(result) {
-        const referenceImage = this._image[this._currentImageIndex];
+        const referenceImage = this._trainingMap.referenceImages[this._currentImageIndex];
         const keypoints = result.keypoints;
         const image = result.image;
         // log
         Utils.log(`Image Tracker: found ${keypoints.length} keypoints in reference image "${referenceImage.name}"`);
+        // tracker output
+        const trackerOutput = {
+            keypointsNIS: image !== undefined ? keypoints : undefined,
+            image: image,
+        };
         // set the training map, so that we can map all keypoints of the current image to the current image
-        this._trainingMap.referenceImage.push(referenceImage);
         for (let i = 0; i < keypoints.length; i++) {
             this._trainingMap.keypoints.push(keypoints[i]);
             this._trainingMap.referenceImageIndex.push(this._currentImageIndex);
         }
         // the current image has been processed!
         ++this._currentImageIndex;
-        // set output
-        if (this._currentImageIndex >= this._image.length) {
-            // finished training!
-            return speedy_vision_default().Promise.resolve({
-                //nextState: 'training',
-                nextState: 'scanning',
-                nextStateSettings: {
-                    keypoints: this._trainingMap.keypoints,
-                },
-                trackerOutput: {},
-                //trackerOutput: { image, keypoints, screenSize: this.screenSize },
-            });
-        }
-        else {
-            // we're not done yet
+        // we're not done yet
+        if (this._currentImageIndex < this._trainingMap.referenceImages.length) {
             return speedy_vision_default().Promise.resolve({
                 nextState: 'training',
-                trackerOutput: {},
-                //trackerOutput: { image, keypoints, screenSize: this.screenSize },
+                trackerOutput: trackerOutput
             });
         }
+        // finished training!
+        return speedy_vision_default().Promise.resolve({
+            nextState: 'scanning',
+            trackerOutput: trackerOutput,
+            nextStateSettings: {
+                database: this._trainingMap.keypoints,
+            }
+        });
     }
     /**
      * Create & setup the pipeline
@@ -21867,7 +22269,7 @@ class ImageTrackerTrainingState extends ImageTrackerState {
         const clipper = speedy_vision_default().Keypoint.Clipper();
         const keypointScaler = speedy_vision_default().Keypoint.Transformer('keypointScaler');
         const keypointSink = speedy_vision_default().Keypoint.Sink('keypoints');
-        const imageSink = speedy_vision_default().Image.Sink('image');
+        //const imageSink = Speedy.Image.Sink('image');
         source.media = null;
         screen.size = speedy_vision_default().Size(0, 0);
         blur.kernelSize = speedy_vision_default().Size(ORB_GAUSSIAN_KSIZE, ORB_GAUSSIAN_KSIZE);
@@ -21906,17 +22308,17 @@ class ImageTrackerTrainingState extends ImageTrackerState {
         // keypoint description
         greyscale.output().connectTo(blur.input());
         blur.output().connectTo(descriptor.input('image'));
-        clipper.output().connectTo(descriptor.input('keypoints'));
+        subpixel.output().connectTo(descriptor.input('keypoints'));
         // prepare output
         descriptor.output().connectTo(keypointScaler.input());
         keypointScaler.output().connectTo(keypointSink.input());
-        nightvisionMux.output().connectTo(imageSink.input());
+        //nightvisionMux.output().connectTo(imageSink.input());
         // done!
-        pipeline.init(source, screen, greyscale, nightvision, nightvisionMux, pyramid, detector, blur, descriptor, clipper, denoiser, blurredPyramid, subpixel, keypointScaler, keypointSink, imageSink);
+        pipeline.init(source, screen, greyscale, nightvision, nightvisionMux, pyramid, detector, blur, descriptor, clipper, denoiser, blurredPyramid, subpixel, keypointScaler, keypointSink);
         return pipeline;
     }
     /**
-     * Get reference image
+     * Get the reference image associated with a keypoint index in the training map
      * @param keypointIndex -1 if not found
      * @returns reference image
      */
@@ -21924,10 +22326,10 @@ class ImageTrackerTrainingState extends ImageTrackerState {
         const imageIndex = this.referenceImageIndexOfKeypoint(keypointIndex);
         if (imageIndex < 0)
             return null;
-        return this._trainingMap.referenceImage[imageIndex];
+        return this._trainingMap.referenceImages[imageIndex];
     }
     /**
-     * Get reference image index
+     * Get the reference image index associated with a keypoint index in the training map
      * @param keypointIndex -1 if not found
      * @returns reference image index, or -1 if not found
      */
@@ -21936,12 +22338,12 @@ class ImageTrackerTrainingState extends ImageTrackerState {
         if (keypointIndex < 0 || keypointIndex >= n)
             return -1;
         const imageIndex = this._trainingMap.referenceImageIndex[keypointIndex];
-        if (imageIndex < 0 || imageIndex >= this._trainingMap.referenceImage.length)
+        if (imageIndex < 0 || imageIndex >= this._trainingMap.referenceImages.length)
             return -1;
         return imageIndex;
     }
     /**
-     * Get keypoint of the trained set
+     * Get a keypoint of the trained set
      * @param keypointIndex -1 if not found
      * @returns a keypoint
      */
@@ -21978,14 +22380,14 @@ class ImageTrackerTrainingState extends ImageTrackerState {
 
 
 
-/** Default target space size (used when training) */
-const DEFAULT_TARGET_SPACE_SIZE = speedy_vision_default().Size(TRAIN_TARGET_NORMALIZED_SIZE, TRAIN_TARGET_NORMALIZED_SIZE);
+
+
 /** Port of the portal multiplexer: get new data from the camera */
 const PORT_CAMERA = 0;
 /** Port of the portal multiplexer: get previously memorized data */
 const PORT_MEMORY = 1;
 /**
- * Scanning state of the Image Tracker
+ * In the scanning state we look for a reference image in the video
  */
 class ImageTrackerScanningState extends ImageTrackerState {
     /**
@@ -22005,15 +22407,27 @@ class ImageTrackerScanningState extends ImageTrackerState {
     onEnterState(settings) {
         const imagePortalMux = this._pipeline.node('imagePortalMux');
         const lshTables = this._pipeline.node('lshTables');
-        const keypoints = settings.keypoints;
+        const database = settings.database;
         // set attributes
         this._counter = 0;
         this._bestScore = 0;
         // reset the image memorization circuit
         imagePortalMux.port = PORT_CAMERA;
         // prepare the keypoint matcher
-        if (keypoints !== undefined)
-            lshTables.keypoints = keypoints;
+        if (database !== undefined)
+            lshTables.keypoints = database;
+    }
+    /**
+     * Called just before the GPU processing
+     * @returns promise
+     */
+    _beforeUpdate() {
+        const keypointScaler = this._pipeline.node('keypointScaler');
+        const screenSize = this.screenSize;
+        // convert keypoints to NIS
+        keypointScaler.transform = ImageTrackerUtils.rasterToNIS(screenSize);
+        // done!
+        return speedy_vision_default().Promise.resolve();
     }
     /**
      * Post processing that takes place just after the GPU processing
@@ -22023,87 +22437,96 @@ class ImageTrackerScanningState extends ImageTrackerState {
     _afterUpdate(result) {
         const imagePortalMux = this._pipeline.node('imagePortalMux');
         const keypoints = result.keypoints;
-        const matchedKeypoints = this._goodMatches(keypoints);
+        const image = result.image;
         // tracker output
         const trackerOutput = {
-            keypoints: keypoints,
-            screenSize: this.screenSize
+            keypointsNIS: keypoints,
+            polylineNDC: [],
+            image: image,
         };
         // keep the last memorized image
         imagePortalMux.port = PORT_MEMORY;
-        // have we found enough matches...?
-        if (matchedKeypoints.length >= SCAN_MIN_MATCHES) {
-            return this._findHomography(matchedKeypoints).then(([homography, score]) => {
-                // have we found the best homography so far?
-                if (score >= this._bestScore) {
-                    // store it only if we'll be running the pipeline again
-                    if (this._counter < SCAN_CONSECUTIVE_FRAMES - 1) {
-                        this._bestScore = score;
-                        this._bestHomography = homography;
-                        // memorize the last image, corresponding to the best homography(*)
-                        imagePortalMux.port = PORT_CAMERA;
-                        /*
-
-                        (*) technically speaking, this is not exactly the case. Since we're
-                            using turbo to download the keypoints, there's a slight difference
-                            between the data used to compute the homography and the last image.
-                            Still, assuming continuity of the video stream, this logic is
-                            good enough.
-
-                        */
-                    }
-                }
-                // find a polyline surrounding the target
-                return this._findPolyline(homography, DEFAULT_TARGET_SPACE_SIZE);
-            }).then(polyline => {
-                // continue a little longer in the scanning state
-                if (++this._counter < SCAN_CONSECUTIVE_FRAMES) {
-                    return {
-                        nextState: this.name,
-                        trackerOutput: Object.assign({ polyline: polyline }, trackerOutput),
-                    };
-                }
-                // this image should correspond to the best homography
-                const snapshot = this._pipeline.node('imagePortalSink');
-                // the reference image that we'll track
-                const referenceImage = this._imageTracker._referenceImageOfKeypoint(matchedKeypoints[0].matches[0].index);
-                // let's track the target!
-                return {
-                    nextState: 'pre-tracking',
-                    nextStateSettings: {
-                        homography: this._bestHomography,
-                        snapshot: snapshot,
-                        referenceImage: referenceImage,
-                    },
-                    trackerOutput: Object.assign({ polyline: polyline }, trackerOutput),
-                };
-            }).catch(() => {
-                // continue in the scanning state
-                return {
-                    nextState: this.name,
-                    trackerOutput: trackerOutput,
-                };
-            });
-        }
-        else {
-            // not enough matches...!
+        // find high quality matches
+        const matchedKeypoints = this._selectGoodMatches(keypoints);
+        if (matchedKeypoints.length < SCAN_MIN_MATCHES) {
+            // not enough high quality matches?
+            // we'll continue to scan the scene
             this._counter = 0;
             this._bestScore = 0;
+            return speedy_vision_default().Promise.resolve({
+                nextState: 'scanning',
+                trackerOutput: trackerOutput,
+            });
         }
-        // we'll continue to scan the scene
-        return speedy_vision_default().Promise.resolve({
-            nextState: this.name,
-            trackerOutput: trackerOutput,
+        // we have enough high quality matches!
+        const pairs = this._findMatchingPairs(matchedKeypoints);
+        const points = ImageTrackerUtils.compilePairsOfKeypointsNDC(pairs);
+        // find a homography
+        return this._findHomographyNDC(points).then(([homography, score]) => {
+            // have we found the best homography so far?
+            if (score >= this._bestScore) {
+                // store it only if we'll be running the pipeline again
+                if (this._counter < SCAN_CONSECUTIVE_FRAMES - 1) {
+                    this._bestScore = score;
+                    this._bestHomography = homography;
+                    // memorize the last image, corresponding to the best homography(*)
+                    imagePortalMux.port = PORT_CAMERA;
+                    /*
+
+                    (*) technically speaking, this is not exactly the case. Since we're
+                        using turbo to download the keypoints, there's a slight difference
+                        between the data used to compute the homography and the last image.
+                        Still, assuming continuity of the video stream, this logic is
+                        good enough.
+
+                    */
+                }
+            }
+            // find a polyline surrounding the target
+            const polylineNDC = ImageTrackerUtils.findPolylineNDC(homography);
+            trackerOutput.polylineNDC.push(...polylineNDC);
+            // continue a little longer in the scanning state
+            if (++this._counter < SCAN_CONSECUTIVE_FRAMES) {
+                return {
+                    nextState: 'scanning',
+                    trackerOutput: trackerOutput
+                };
+            }
+            // this image should correspond to the best homography
+            const snapshot = this._pipeline.node('imagePortalSink');
+            // the reference image that we'll track
+            const referenceImage = this._imageTracker._referenceImageOfKeypoint(matchedKeypoints[0].matches[0].index);
+            // this shouldn't happen
+            if (!referenceImage)
+                throw new DetectionError(`Can't track an unknown reference image`);
+            // let's track the target!
+            return {
+                nextState: 'pre-tracking-a',
+                nextStateSettings: {
+                    homography: this._bestHomography,
+                    snapshot: snapshot,
+                    referenceImage: referenceImage,
+                },
+                trackerOutput: trackerOutput
+            };
+        })
+            .catch(err => {
+            // continue in the scanning state
+            Utils.warning(`Error when scanning: ${err.toString()}`);
+            return {
+                nextState: 'scanning',
+                trackerOutput: trackerOutput,
+            };
         });
     }
     /**
-     * Find "high quality" matches of a single reference image
-     * @param keypoints
-     * @returns high quality matches
+     * Select high quality matches of a single reference image
+     * @param keypoints matched keypoints of any quality, to any reference image
+     * @returns high quality matches of a single reference image
      */
-    _goodMatches(keypoints) {
+    _selectGoodMatches(keypoints) {
         const matchedKeypointsPerImageIndex = Object.create(null);
-        // filter "good matches"
+        // find high quality matches, regardless of reference image
         for (let j = keypoints.length - 1; j >= 0; j--) {
             const keypoint = keypoints[j];
             if (keypoint.matches[0].index >= 0 && keypoint.matches[1].index >= 0) {
@@ -22122,7 +22545,7 @@ class ImageTrackerScanningState extends ImageTrackerState {
                 }
             }
         }
-        // find the image with the most matches
+        // find the reference image with the most high quality matches
         let matchedKeypoints = [];
         for (const imageIndex in matchedKeypointsPerImageIndex) {
             if (matchedKeypointsPerImageIndex[imageIndex].length > matchedKeypoints.length)
@@ -22132,58 +22555,34 @@ class ImageTrackerScanningState extends ImageTrackerState {
         return matchedKeypoints;
     }
     /**
-     * Find a homography matrix using matched keypoints
-     * @param matchedKeypoints "good" matches only
-     * @returns homography from reference image space to AR screen space & homography "quality" score
+     * Find a homography matrix using matched keypoints in NDC
+     * @param points compiled pairs of keypoints in NDC
+     * @returns homography (from reference to matched, NDC) & "quality" score
      */
-    _findHomography(matchedKeypoints) {
-        const srcCoords = [];
-        const dstCoords = [];
-        // find matching coordinates of the keypoints
+    _findHomographyNDC(points) {
+        return ImageTrackerUtils.findPerspectiveWarpNDC(points, {
+            method: 'pransac',
+            reprojectionError: SCAN_RANSAC_REPROJECTIONERROR_NDC,
+            numberOfHypotheses: 512 * 2,
+            bundleSize: 128,
+        });
+    }
+    /**
+     * Find matching pairs of keypoints from reference image (src) to matched image (dest)
+     * @param matchedKeypoints
+     * @returns an array of matching pairs [src, dest]
+     */
+    _findMatchingPairs(matchedKeypoints) {
+        const pairs = new Array(matchedKeypoints.length);
         for (let i = matchedKeypoints.length - 1; i >= 0; i--) {
             const matchedKeypoint = matchedKeypoints[i];
             const referenceKeypoint = this._imageTracker._referenceKeypoint(matchedKeypoint.matches[0].index);
-            if (referenceKeypoint != null) {
-                srcCoords.push(referenceKeypoint.x);
-                srcCoords.push(referenceKeypoint.y);
-                dstCoords.push(matchedKeypoint.x);
-                dstCoords.push(matchedKeypoint.y);
-            }
-            else {
-                // this shouldn't happen
-                return speedy_vision_default().Promise.reject(new DetectionError(`Invalid keypoint match index: ${matchedKeypoint.matches[0].index} from ${matchedKeypoint.toString()}`));
-            }
+            // this shouldn't happen
+            if (referenceKeypoint == null)
+                throw new DetectionError(`Invalid keypoint match index: ${matchedKeypoint.matches[0].index} from ${matchedKeypoint.toString()}`);
+            pairs[i] = [referenceKeypoint, matchedKeypoint];
         }
-        // too few points?
-        const n = srcCoords.length / 2;
-        if (n < 4) {
-            return speedy_vision_default().Promise.reject(new DetectionError(`Too few points to compute a homography`));
-        }
-        // compute a homography
-        const src = speedy_vision_default().Matrix(2, n, srcCoords);
-        const dst = speedy_vision_default().Matrix(2, n, dstCoords);
-        const mask = speedy_vision_default().Matrix.Zeros(1, n);
-        const homography = speedy_vision_default().Matrix.Zeros(3);
-        return speedy_vision_default().Matrix.findHomography(homography, src, dst, {
-            method: 'pransac',
-            reprojectionError: SCAN_RANSAC_REPROJECTIONERROR,
-            numberOfHypotheses: 512,
-            bundleSize: 128,
-            mask: mask,
-        }).then(homography => {
-            // check if this is a valid homography
-            const a00 = homography.at(0, 0);
-            if (Number.isNaN(a00))
-                throw new DetectionError(`Can't compute homography`);
-            // count the number of inliers
-            const inliers = mask.read();
-            let inlierCount = 0;
-            for (let i = inliers.length - 1; i >= 0; i--)
-                inlierCount += inliers[i];
-            const score = inlierCount / inliers.length;
-            // done!
-            return [homography, score];
-        });
+        return pairs;
     }
     /**
      * Create & setup the pipeline
@@ -22203,6 +22602,7 @@ class ImageTrackerScanningState extends ImageTrackerState {
         const clipper = speedy_vision_default().Keypoint.Clipper();
         const lshTables = speedy_vision_default().Keypoint.Matcher.StaticLSHTables('lshTables');
         const knn = speedy_vision_default().Keypoint.Matcher.LSHKNN();
+        const keypointScaler = speedy_vision_default().Keypoint.Transformer('keypointScaler');
         const keypointSink = speedy_vision_default().Keypoint.SinkOfMatchedKeypoints('keypoints');
         const imagePortalSink = speedy_vision_default().Image.Portal.Sink('imagePortalSink');
         const imagePortalSource = speedy_vision_default().Image.Portal.Source('imagePortalSource');
@@ -22234,6 +22634,7 @@ class ImageTrackerScanningState extends ImageTrackerState {
         imagePortalMux.port = PORT_CAMERA; // 0 = camera stream; 1 = lock image
         imagePortalCopy.size = speedy_vision_default().Size(0, 0);
         imagePortalCopy.scale = speedy_vision_default().Vector2(1, 1);
+        keypointScaler.transform = speedy_vision_default().Matrix.Eye(3);
         keypointSink.turbo = true;
         // prepare input
         source.output().connectTo(screen.input());
@@ -22254,7 +22655,8 @@ class ImageTrackerScanningState extends ImageTrackerState {
         descriptor.output().connectTo(knn.input('keypoints'));
         lshTables.output().connectTo(knn.input('lsh'));
         // prepare output
-        clipper.output().connectTo(keypointSink.input());
+        clipper.output().connectTo(keypointScaler.input());
+        keypointScaler.output().connectTo(keypointSink.input());
         knn.output().connectTo(keypointSink.input('matches'));
         //pyramid.output().connectTo(imageSink.input());
         // memorize image
@@ -22264,12 +22666,12 @@ class ImageTrackerScanningState extends ImageTrackerState {
         imagePortalCopy.output().connectTo(imagePortalMux.input('in1'));
         imagePortalMux.output().connectTo(imagePortalSink.input());
         // done!
-        pipeline.init(source, screen, greyscale, blur, nightvision, nightvisionMux, pyramid, detector, descriptor, clipper, lshTables, knn, keypointSink, imagePortalSink, imagePortalSource, imagePortalMux, imagePortalBuffer, imagePortalCopy);
+        pipeline.init(source, screen, greyscale, blur, nightvision, nightvisionMux, pyramid, detector, descriptor, clipper, lshTables, knn, keypointScaler, keypointSink, imagePortalSink, imagePortalSource, imagePortalMux, imagePortalBuffer, imagePortalCopy);
         return pipeline;
     }
 }
 
-;// CONCATENATED MODULE: ./src/trackers/image-tracker/states/pre-tracking.ts
+;// CONCATENATED MODULE: ./src/trackers/image-tracker/states/pre-tracking-a.ts
 /*
  * encantar.js
  * GPU-accelerated Augmented Reality for the web
@@ -22288,94 +22690,67 @@ class ImageTrackerScanningState extends ImageTrackerState {
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * pre-tracking.ts
- * Pre-tracking state of the Image Tracker
+ * pre-tracking-a.ts
+ * Image tracker: Pre-Tracking A state
  */
 
 
 
 
 
-/** Default target space size (used when training) */
-const pre_tracking_DEFAULT_TARGET_SPACE_SIZE = speedy_vision_default().Size(TRAIN_TARGET_NORMALIZED_SIZE, TRAIN_TARGET_NORMALIZED_SIZE);
-/** Use the camera stream as the input of the pipeline */
-const PORT_CAMERA_IMAGE = 1;
-/** Use the reference image as the input of the pipeline */
-const PORT_REFERENCE_IMAGE = 0;
 /**
- * The pre-tracking state of the Image Tracker is a new training
- * phase for the particular, actual target we'll be tracking
+ * Pre-Tracking A is a new training phase. The reference image that was found
+ * in the scanning state is transported to AR screen space, and a new training
+ * takes place there, with new keypoints and in a suitable warp.
  */
-class ImageTrackerPreTrackingState extends ImageTrackerState {
+class ImageTrackerPreTrackingAState extends ImageTrackerState {
     /**
      * Constructor
      * @param imageTracker
      */
     constructor(imageTracker) {
-        super('pre-tracking', imageTracker);
+        super('pre-tracking-a', imageTracker);
         this._homography = speedy_vision_default().Matrix.Eye(3);
         this._referenceImage = null;
-        this._step = 'read-reference-image';
-        this._referenceKeypoints = [];
-        this._iterations = 0;
+        this._snapshot = null;
     }
     /**
      * Called as soon as this becomes the active state, just before update() runs for the first time
      * @param settings
      */
     onEnterState(settings) {
-        const imagePortalSource = this._pipeline.node('imagePortalSource');
-        const muxOfReferenceKeypoints = this._pipeline.node('muxOfReferenceKeypoints');
-        const muxOfBufferOfReferenceKeypoints = this._pipeline.node('muxOfBufferOfReferenceKeypoints');
-        const bufferOfReferenceKeypoints = this._pipeline.node('bufferOfReferenceKeypoints');
         const homography = settings.homography;
         const referenceImage = settings.referenceImage;
         const snapshot = settings.snapshot;
-        // this shouldn't happen
-        if (!referenceImage)
-            throw new TrackingError(`Can't track a null reference image`);
         // set attributes
         this._homography = homography;
         this._referenceImage = referenceImage;
-        this._step = 'read-reference-image';
-        this._referenceKeypoints = [];
-        this._iterations = 0;
-        // setup the pipeline
-        imagePortalSource.source = snapshot;
-        muxOfReferenceKeypoints.port = 0;
-        muxOfBufferOfReferenceKeypoints.port = 0;
-        bufferOfReferenceKeypoints.frozen = false;
+        this._snapshot = snapshot;
     }
     /**
      * Called just before the GPU processing
      * @returns promise
      */
     _beforeUpdate() {
-        const referenceImage = this._referenceImage;
-        const source = this._pipeline.node('source');
-        const sourceMux = this._pipeline.node('sourceMux');
-        const imageRectifier = this._pipeline.node('imageRectifier');
-        const keypointRectifier = this._pipeline.node('keypointRectifier');
-        const borderClipper = this._pipeline.node('borderClipper');
         const screenSize = this.screenSize;
-        // set the source media to the reference image we're going to track
-        const targetMedia = this._imageTracker.database._findMedia(referenceImage.name);
-        source.media = targetMedia;
-        // setup the source multiplexer
-        if (this._step == 'read-reference-image')
-            sourceMux.port = PORT_REFERENCE_IMAGE;
-        else
-            sourceMux.port = PORT_CAMERA_IMAGE;
+        const source = this._pipeline.node('source');
+        const imageRectifier = this._pipeline.node('imageRectifier');
+        const keypointScaler = this._pipeline.node('keypointScaler');
+        const borderClipper = this._pipeline.node('borderClipper');
+        // set the reference image as the source image
+        source.media = this._referenceImage.media;
         // clip keypoints from the borders of the target image
         borderClipper.imageSize = screenSize;
         borderClipper.borderSize = speedy_vision_default().Vector2(screenSize.width * TRACK_CLIPPING_BORDER, screenSize.height * TRACK_CLIPPING_BORDER);
+        // convert keypoints to NIS
+        keypointScaler.transform = ImageTrackerUtils.rasterToNIS(screenSize);
         // rectify the image
-        const rectify = (this._step == 'read-reference-image') ?
-            this._findRectificationMatrixOfFullscreenImage(targetMedia, screenSize) :
-            this._findRectificationMatrixOfCameraImage(this._homography, pre_tracking_DEFAULT_TARGET_SPACE_SIZE, targetMedia, screenSize);
-        return rectify.then(rectificationMatrix => {
-            imageRectifier.transform = rectificationMatrix;
-        });
+        const scale = TRACK_RECTIFIED_SCALE;
+        const aspectRatio = ImageTrackerUtils.bestFitAspectRatioNDC(screenSize, this._referenceImage);
+        const shrink = ImageTrackerUtils.bestFitScaleNDC(aspectRatio, scale);
+        const toScreen = ImageTrackerUtils.NDCToRaster(screenSize);
+        const toNDC = ImageTrackerUtils.rasterToNDC(screenSize);
+        return imageRectifier.transform.setTo(toScreen.times(shrink).times(toNDC)).then(() => void 0);
     }
     /**
      * Post processing that takes place just after the GPU processing
@@ -22384,158 +22759,316 @@ class ImageTrackerPreTrackingState extends ImageTrackerState {
      */
     _afterUpdate(result) {
         const referenceImage = this._referenceImage;
-        const imagePortalSink = this._pipeline.node('imagePortal');
         const keypointPortalSink = this._pipeline.node('keypointPortalSink');
-        const muxOfReferenceKeypoints = this._pipeline.node('muxOfReferenceKeypoints');
-        const muxOfBufferOfReferenceKeypoints = this._pipeline.node('muxOfBufferOfReferenceKeypoints');
-        const bufferOfReferenceKeypoints = this._pipeline.node('bufferOfReferenceKeypoints');
         const keypoints = result.keypoints;
         const image = result.image;
         // tracker output
         const trackerOutput = {
-            keypoints: image !== undefined ? keypoints : undefined,
+            keypointsNIS: image !== undefined ? keypoints : undefined,
             image: image,
-            screenSize: this.screenSize,
         };
-        // decide what to do next
-        switch (this._step) {
-            case 'read-reference-image': {
-                // enable matching
-                muxOfReferenceKeypoints.port = 1;
-                // store reference keypoints
-                this._referenceKeypoints = keypoints;
-                // next step
-                this._step = 'warp-camera-image';
-                return speedy_vision_default().Promise.resolve({
-                    nextState: 'pre-tracking',
-                    trackerOutput: trackerOutput,
-                });
-            }
-            case 'warp-camera-image': {
-                // freeze reference keypoints
-                bufferOfReferenceKeypoints.frozen = true;
-                muxOfBufferOfReferenceKeypoints.port = 1;
-                // refine warp?
-                if (++this._iterations < TRACK_REFINEMENT_ITERATIONS)
-                    this._step = 'warp-camera-image';
-                else
-                    this._step = 'train-camera-image';
-                // warp image & go to next step
-                return this._findWarp(keypoints, this._referenceKeypoints).then(warp => this._homography.setTo(this._homography.times(warp))).then(_ => ({
-                    nextState: 'pre-tracking',
-                    trackerOutput: trackerOutput,
-                })).catch(err => {
-                    Utils.warning(`Can't pre-track target image "${referenceImage.name}". ${err.toString()}`);
-                    return {
-                        nextState: 'scanning',
-                        trackerOutput: trackerOutput,
-                    };
-                });
-            }
-            case 'train-camera-image': {
-                // log
-                Utils.log(`Took a snapshot of target image "${referenceImage.name}". Found ${keypoints.length} keypoints.`);
-                // change the coordinates
-                return this._changeSpace(this._homography, this.screenSize).then(homography => {
-                    // we're ready to track the target!
-                    return speedy_vision_default().Promise.resolve({
-                        //nextState: 'pre-tracking',
-                        nextState: 'tracking',
-                        trackerOutput: trackerOutput,
-                        nextStateSettings: {
-                            homography: homography,
-                            referenceImage: referenceImage,
-                            templateKeypoints: keypoints,
-                            keypointPortalSink: keypointPortalSink,
-                            imagePortalSink: imagePortalSink,
-                            screenSize: this.screenSize,
-                        },
-                    });
-                });
-            }
+        // not enough keypoints? something went wrong!
+        if (keypoints.length < PRE_TRACK_MIN_MATCHES) {
+            Utils.warning(`Can't pre-track "${referenceImage.name}" in ${this.name}!`);
+            return speedy_vision_default().Promise.resolve({
+                nextState: 'scanning',
+                trackerOutput: trackerOutput,
+            });
         }
-    }
-    /**
-     * Find an adjustment warp between the camera image and the reference image
-     * @param dstKeypoints destination
-     * @param srcKeypoints source
-     * @returns a promise that resolves to a 3x3 homography
-     */
-    _findWarp(dstKeypoints, srcKeypoints) {
-        //return Speedy.Promise.resolve(Speedy.Matrix.Eye(3));
-        const srcCoords = [];
-        const dstCoords = [];
-        // find matching coordinates of the keypoints
-        for (let i = 0; i < dstKeypoints.length; i++) {
-            const dstKeypoint = dstKeypoints[i];
-            if (dstKeypoint.matches[0].index >= 0 && dstKeypoint.matches[1].index >= 0) {
-                const d1 = dstKeypoint.matches[0].distance, d2 = dstKeypoint.matches[1].distance;
-                // the best match should be "much better" than the second best match,
-                // which means that they are "distinct enough"
-                if (d1 <= TRACK_MATCH_RATIO * d2) {
-                    const srcKeypoint = srcKeypoints[dstKeypoint.matches[0].index];
-                    srcCoords.push(srcKeypoint.x);
-                    srcCoords.push(srcKeypoint.y);
-                    dstCoords.push(dstKeypoint.x);
-                    dstCoords.push(dstKeypoint.y);
-                }
+        // done!
+        return speedy_vision_default().Promise.resolve({
+            nextState: 'pre-tracking-b',
+            trackerOutput: trackerOutput,
+            nextStateSettings: {
+                referenceKeypointPortalSink: keypointPortalSink,
+                referenceImage: this._referenceImage,
+                snapshot: this._snapshot,
+                homography: this._homography,
             }
-        }
-        // too few points?
-        const n = srcCoords.length / 2;
-        if (n < 4) {
-            return speedy_vision_default().Promise.reject(new TrackingError('Too few points to compute a warp'));
-        }
-        // compute warp
-        const model = speedy_vision_default().Matrix.Eye(3);
-        return this._findKeypointWarp().then(transform => 
-        // rectify keypoints
-        speedy_vision_default().Matrix.applyAffineTransform(speedy_vision_default().Matrix.Zeros(2, 2 * n), speedy_vision_default().Matrix(2, 2 * n, srcCoords.concat(dstCoords)), transform.block(0, 1, 0, 2))).then(points => 
-        // find warp
-        speedy_vision_default().Matrix.findAffineTransform(model.block(0, 1, 0, 2), points.block(0, 1, 0, n - 1), points.block(0, 1, n, 2 * n - 1), {
-            method: 'pransac',
-            reprojectionError: TRACK_RANSAC_REPROJECTIONERROR,
-            numberOfHypotheses: 512 * 4,
-            bundleSize: 128,
-        })).then(_ => {
-            // validate the model
-            const a00 = model.at(0, 0);
-            if (Number.isNaN(a00))
-                throw new TrackingError(`Can't compute warp: bad keypoints`);
-            // done!
-            return model;
         });
     }
     /**
-     * Find a warp to be applied to the keypoints
-     * @returns affine transform
+     * Create & setup the pipeline
+     * @returns pipeline
      */
-    _findKeypointWarp() {
-        const referenceImage = this._referenceImage;
-        const media = this._imageTracker.database._findMedia(referenceImage.name);
-        const screenSize = this.screenSize;
-        // no rotation is needed
-        if (!this._mustRotateWarpedImage(media, screenSize))
-            return speedy_vision_default().Promise.resolve(speedy_vision_default().Matrix.Eye(3));
-        // rotate by 90 degrees clockwise around the pivot
-        const px = screenSize.width / 2, py = screenSize.height / 2; // pivot
-        return speedy_vision_default().Promise.resolve(speedy_vision_default().Matrix(3, 3, [
-            0, 1, 0,
-            -1, 0, 0,
-            py + px, py - px, 1,
-        ]));
+    _createPipeline() {
+        const pipeline = speedy_vision_default().Pipeline();
+        const source = speedy_vision_default().Image.Source('source');
+        const screen = speedy_vision_default().Transform.Resize('screen');
+        const greyscale = speedy_vision_default().Filter.Greyscale();
+        const imageRectifier = speedy_vision_default().Transform.PerspectiveWarp('imageRectifier');
+        const nightvision = speedy_vision_default().Filter.Nightvision();
+        const nightvisionMux = speedy_vision_default().Image.Multiplexer();
+        const detector = speedy_vision_default().Keypoint.Detector.Harris();
+        const descriptor = speedy_vision_default().Keypoint.Descriptor.ORB();
+        const blur = speedy_vision_default().Filter.GaussianBlur();
+        const clipper = speedy_vision_default().Keypoint.Clipper();
+        const borderClipper = speedy_vision_default().Keypoint.BorderClipper('borderClipper');
+        const denoiser = speedy_vision_default().Filter.GaussianBlur();
+        const subpixel = speedy_vision_default().Keypoint.SubpixelRefiner();
+        const keypointScaler = speedy_vision_default().Keypoint.Transformer('keypointScaler');
+        const keypointPortalSink = speedy_vision_default().Keypoint.Portal.Sink('keypointPortalSink');
+        const keypointSink = speedy_vision_default().Keypoint.Sink('keypoints');
+        //const imageSink = Speedy.Image.Sink('image');
+        source.media = null;
+        imageRectifier.transform = speedy_vision_default().Matrix.Eye(3);
+        screen.size = speedy_vision_default().Size(0, 0);
+        nightvision.gain = NIGHTVISION_GAIN;
+        nightvision.offset = NIGHTVISION_OFFSET;
+        nightvision.decay = NIGHTVISION_DECAY;
+        nightvision.quality = NIGHTVISION_QUALITY;
+        nightvisionMux.port = TRACK_WITH_NIGHTVISION ? 1 : 0; // 1 = enable nightvision
+        blur.kernelSize = speedy_vision_default().Size(ORB_GAUSSIAN_KSIZE, ORB_GAUSSIAN_KSIZE);
+        blur.sigma = speedy_vision_default().Vector2(ORB_GAUSSIAN_SIGMA, ORB_GAUSSIAN_SIGMA);
+        denoiser.kernelSize = speedy_vision_default().Size(SUBPIXEL_GAUSSIAN_KSIZE, SUBPIXEL_GAUSSIAN_KSIZE);
+        denoiser.sigma = speedy_vision_default().Vector2(SUBPIXEL_GAUSSIAN_SIGMA, SUBPIXEL_GAUSSIAN_SIGMA);
+        detector.quality = TRACK_HARRIS_QUALITY;
+        detector.capacity = TRACK_DETECTOR_CAPACITY;
+        subpixel.method = SUBPIXEL_METHOD;
+        clipper.size = TRACK_MAX_KEYPOINTS;
+        borderClipper.imageSize = screen.size;
+        borderClipper.borderSize = speedy_vision_default().Vector2(0, 0);
+        keypointScaler.transform = speedy_vision_default().Matrix.Eye(3);
+        keypointSink.turbo = false;
+        // prepare input
+        source.output().connectTo(screen.input());
+        screen.output().connectTo(greyscale.input());
+        // preprocess images
+        greyscale.output().connectTo(imageRectifier.input());
+        imageRectifier.output().connectTo(nightvisionMux.input('in0'));
+        imageRectifier.output().connectTo(nightvision.input());
+        nightvision.output().connectTo(nightvisionMux.input('in1'));
+        // keypoint detection & clipping
+        nightvisionMux.output().connectTo(detector.input());
+        detector.output().connectTo(borderClipper.input());
+        borderClipper.output().connectTo(clipper.input());
+        // keypoint refinement
+        imageRectifier.output().connectTo(denoiser.input());
+        denoiser.output().connectTo(subpixel.input('image'));
+        clipper.output().connectTo(subpixel.input('keypoints'));
+        // keypoint description
+        nightvisionMux.output().connectTo(blur.input());
+        blur.output().connectTo(descriptor.input('image'));
+        subpixel.output().connectTo(descriptor.input('keypoints'));
+        // prepare output
+        descriptor.output().connectTo(keypointScaler.input());
+        keypointScaler.output().connectTo(keypointSink.input());
+        keypointScaler.output().connectTo(keypointPortalSink.input());
+        //imageRectifier.output().connectTo(imageSink.input());
+        // done!
+        pipeline.init(source, screen, greyscale, imageRectifier, nightvision, nightvisionMux, detector, borderClipper, clipper, denoiser, subpixel, blur, descriptor, keypointScaler, keypointSink, keypointPortalSink);
+        return pipeline;
+    }
+}
+
+;// CONCATENATED MODULE: ./src/trackers/image-tracker/states/pre-tracking-b.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * pre-tracking-b.ts
+ * Image tracker: Pre-Tracking B state
+ */
+
+
+
+
+
+
+/** Port of the source image multiplexer: get data from the portal */
+const PORT_PORTAL = 0;
+/** Port of the source image multiplexer: get data from the camera */
+const pre_tracking_b_PORT_CAMERA = 1;
+/**
+ * In Pre-Tracking B, we refine the homography obtained at the scanning state.
+ * We find a transformation that warps the snapshot obtained from the scanning
+ * state to an image that closely resembles the output of Pre-Tracking A.
+ */
+class ImageTrackerPreTrackingBState extends ImageTrackerState {
+    /**
+     * Constructor
+     * @param imageTracker
+     */
+    constructor(imageTracker) {
+        super('pre-tracking-b', imageTracker);
+        this._homography = speedy_vision_default().Matrix.Eye(3);
+        this._referenceImage = null;
+        this._snapshot = null;
+        this._referenceKeypointPortalSink = null;
+        this._iterations = 0;
     }
     /**
-     * Change the space of the homography in order to improve tracking quality
-     * @param homography mapping coordinates from normalized target space to AR screen space
-     * @param screenSize AR screen size
-     * @returns homography mapping coordinates from AR screen space to AR screen space
+     * Called as soon as this becomes the active state, just before update() runs for the first time
+     * @param settings
      */
-    _changeSpace(homography, screenSize) {
-        const sw = screenSize.width, sh = screenSize.height;
-        const screen = speedy_vision_default().Matrix(2, 4, [0, 0, sw, 0, sw, sh, 0, sh]);
-        const mat = speedy_vision_default().Matrix.Zeros(3);
-        return this._findPolylineCoordinates(homography, pre_tracking_DEFAULT_TARGET_SPACE_SIZE).then(polyline => speedy_vision_default().Matrix.perspective(mat, screen, polyline));
+    onEnterState(settings) {
+        const homography = settings.homography;
+        const referenceImage = settings.referenceImage;
+        const snapshot = settings.snapshot;
+        const referenceKeypointPortalSink = settings.referenceKeypointPortalSink;
+        const sourceMux = this._pipeline.node('sourceMux');
+        const sourceBuffer = this._pipeline.node('sourceBuffer');
+        // set attributes
+        this._homography = homography;
+        this._referenceImage = referenceImage;
+        this._snapshot = snapshot;
+        this._referenceKeypointPortalSink = referenceKeypointPortalSink;
+        this._iterations = 0;
+        // reset nodes
+        sourceMux.port = PORT_PORTAL;
+        sourceBuffer.frozen = false;
+    }
+    /**
+     * Called just before the GPU processing
+     * @returns promise
+     */
+    _beforeUpdate() {
+        const screenSize = this.screenSize;
+        const imageRectifier = this._pipeline.node('imageRectifier');
+        const keypointScaler = this._pipeline.node('keypointScaler');
+        const borderClipper = this._pipeline.node('borderClipper');
+        const imagePortalSource = this._pipeline.node('imagePortalSource');
+        const referenceKeypointPortalSource = this._pipeline.node('referenceKeypointPortalSource');
+        // get the snapshot from the scanning state
+        imagePortalSource.source = this._snapshot;
+        // get the reference keypoints from Pre-Tracking A
+        referenceKeypointPortalSource.source = this._referenceKeypointPortalSink;
+        // clip keypoints from the borders of the target image
+        borderClipper.imageSize = screenSize;
+        borderClipper.borderSize = speedy_vision_default().Vector2(screenSize.width * TRACK_CLIPPING_BORDER, screenSize.height * TRACK_CLIPPING_BORDER);
+        // convert keypoints to NIS
+        keypointScaler.transform = ImageTrackerUtils.rasterToNIS(screenSize);
+        // rectify the image
+        const scale = TRACK_RECTIFIED_SCALE;
+        const aspectRatio = ImageTrackerUtils.bestFitAspectRatioNDC(screenSize, this._referenceImage);
+        const shrink = ImageTrackerUtils.bestFitScaleNDC(aspectRatio, scale);
+        const undistort = this._homography.inverse();
+        const toScreen = ImageTrackerUtils.NDCToRaster(screenSize);
+        const toNDC = ImageTrackerUtils.rasterToNDC(screenSize);
+        return imageRectifier.transform.setTo(toScreen.times(shrink.times(undistort)).times(toNDC)).then(() => void 0);
+    }
+    /**
+     * Post processing that takes place just after the GPU processing
+     * @param result pipeline results
+     * @returns state output
+     */
+    _afterUpdate(result) {
+        const referenceImage = this._referenceImage;
+        const referenceKeypoints = result.referenceKeypoints; // from Pre-Tracking A
+        const keypoints = result.keypoints; // from Pre-Tracking B
+        const image = result.image;
+        const keypointPortalSink = this._pipeline.node('keypointPortalSink');
+        const sourceMux = this._pipeline.node('sourceMux');
+        const sourceBuffer = this._pipeline.node('sourceBuffer');
+        // tracker output
+        const trackerOutput = {
+            keypointsNIS: image !== undefined ? keypoints : undefined,
+            image: image,
+        };
+        return speedy_vision_default().Promise.resolve()
+            .then(() => {
+            // find matching pairs of keypoints
+            const pairs = this._findMatchingPairs(referenceKeypoints, keypoints);
+            //const pairs = ImageTrackerUtils.refineMatchingPairs(allPairs);
+            if (pairs.length < PRE_TRACK_MIN_MATCHES)
+                throw new TrackingError('Not enough data points');
+            // find a warp
+            const points = ImageTrackerUtils.compilePairsOfKeypointsNDC(pairs);
+            return this._findMotionNDC(points);
+        })
+            .then(warp => {
+            // get the camera image in the next iteration
+            // the warped snapshot from the scanning state is occasionally very blurry
+            sourceMux.port = pre_tracking_b_PORT_CAMERA;
+            sourceBuffer.frozen = true;
+            // refine the homography
+            return this._homography.setTo(warp.times(this._homography));
+        })
+            .then(_ => ({
+            nextState: (++this._iterations < PRE_TRACK_MAX_ITERATIONS) ? 'pre-tracking-b' : 'tracking',
+            trackerOutput: trackerOutput,
+            nextStateSettings: {
+                // we export keypoints obtained in Pre-Tracking B, not in A.
+                templateKeypoints: keypoints,
+                templateKeypointPortalSink: keypointPortalSink,
+                referenceImage: this._referenceImage,
+                homography: this._homography,
+                initialScreenSize: this.screenSize,
+            }
+        }))
+            .catch(err => {
+            Utils.warning(`Can't pre-track "${referenceImage.name}" in ${this.name}! ${err.toString()}`);
+            return {
+                nextState: 'scanning',
+                trackerOutput: trackerOutput,
+            };
+        });
+    }
+    /**
+     * Find a motion model in NDC between pairs of keypoints in NDC
+     * given as a 2 x 2n [ src | dest ] matrix
+     * @param points compiled pairs of keypoints in NDC
+     * @returns a promise that resolves to a 3x3 warp in NDC that maps source to destination
+     */
+    _findMotionNDC(points) {
+        //return ImageTrackerUtils.findAffineWarpNDC(points, {
+        return ImageTrackerUtils.findPerspectiveWarpNDC(points, {
+            method: 'pransac',
+            reprojectionError: PRE_TRACK_RANSAC_REPROJECTIONERROR_NDC,
+            numberOfHypotheses: 512 * 8,
+            bundleSize: 128,
+            mask: undefined // score is not needed
+        }).then(([warp, score]) => {
+            const scale = TRACK_RECTIFIED_SCALE;
+            const aspectRatio = ImageTrackerUtils.bestFitAspectRatioNDC(this.screenSize, this._referenceImage);
+            const shrink = ImageTrackerUtils.bestFitScaleNDC(aspectRatio, scale);
+            const grow = ImageTrackerUtils.inverseBestFitScaleNDC(aspectRatio, scale);
+            const scaledWarp = grow.times(warp).times(shrink);
+            const distort = this._homography;
+            const undistort = distort.inverse();
+            const correctedWarp = distort.times(scaledWarp).times(undistort);
+            //console.log(Speedy.Matrix(warp).toString());
+            //console.log(Speedy.Matrix(scaledWarp).toString());
+            //console.log(Speedy.Matrix(correctedWarp).toString());
+            return correctedWarp;
+        });
+    }
+    /**
+     * Find matching pairs of two sets of keypoints matched via brute force
+     * @param srcKeypoints source (database)
+     * @param destKeypoints destination
+     * @returns an array of matching pairs [src, dest]
+     */
+    _findMatchingPairs(srcKeypoints, destKeypoints) {
+        const pairs = [];
+        for (let i = 0; i < destKeypoints.length; i++) {
+            const destKeypoint = destKeypoints[i];
+            if (destKeypoint.matches[0].index >= 0 && destKeypoint.matches[1].index >= 0) {
+                const d1 = destKeypoint.matches[0].distance;
+                const d2 = destKeypoint.matches[1].distance;
+                // the best match should be "much better" than the second best match,
+                // which means that they are "distinct enough"
+                if (d1 <= TRACK_MATCH_RATIO * d2) {
+                    const srcKeypoint = srcKeypoints[destKeypoint.matches[0].index];
+                    pairs.push([srcKeypoint, destKeypoint]);
+                }
+            }
+        }
+        return pairs;
     }
     /**
      * Create & setup the pipeline
@@ -22546,6 +23079,8 @@ class ImageTrackerPreTrackingState extends ImageTrackerState {
         const source = speedy_vision_default().Image.Source('source');
         const imagePortalSource = speedy_vision_default().Image.Portal.Source('imagePortalSource');
         const sourceMux = speedy_vision_default().Image.Multiplexer('sourceMux');
+        const sourceBuffer = speedy_vision_default().Image.Buffer('sourceBuffer');
+        const referenceKeypointPortalSource = speedy_vision_default().Keypoint.Portal.Source('referenceKeypointPortalSource');
         const screen = speedy_vision_default().Transform.Resize('screen');
         const greyscale = speedy_vision_default().Filter.Greyscale();
         const imageRectifier = speedy_vision_default().Transform.PerspectiveWarp('imageRectifier');
@@ -22559,19 +23094,18 @@ class ImageTrackerPreTrackingState extends ImageTrackerState {
         const denoiser = speedy_vision_default().Filter.GaussianBlur();
         const subpixel = speedy_vision_default().Keypoint.SubpixelRefiner();
         const matcher = speedy_vision_default().Keypoint.Matcher.BFKNN();
-        const keypointRectifier = speedy_vision_default().Keypoint.Transformer('keypointRectifier');
-        const keypointPortalSink = speedy_vision_default().Keypoint.Portal.Sink('keypointPortalSink');
-        const keypointPortalSource = speedy_vision_default().Keypoint.Portal.Source('keypointPortalSource');
-        const muxOfReferenceKeypoints = speedy_vision_default().Keypoint.Multiplexer('muxOfReferenceKeypoints');
-        const bufferOfReferenceKeypoints = speedy_vision_default().Keypoint.Buffer('bufferOfReferenceKeypoints');
-        const muxOfBufferOfReferenceKeypoints = speedy_vision_default().Keypoint.Multiplexer('muxOfBufferOfReferenceKeypoints');
+        const keypointScaler = speedy_vision_default().Keypoint.Transformer('keypointScaler');
         const keypointSink = speedy_vision_default().Keypoint.SinkOfMatchedKeypoints('keypoints');
-        const imageSink = speedy_vision_default().Image.Sink('image');
+        const keypointPortalSink = speedy_vision_default().Keypoint.Portal.Sink('keypointPortalSink');
+        const referenceKeypointSink = speedy_vision_default().Keypoint.Sink('referenceKeypoints');
+        //const imageSink = Speedy.Image.Sink('image');
         source.media = null;
-        screen.size = speedy_vision_default().Size(0, 0);
         imagePortalSource.source = null;
+        sourceMux.port = PORT_PORTAL;
+        sourceBuffer.frozen = false;
+        referenceKeypointPortalSource.source = null;
         imageRectifier.transform = speedy_vision_default().Matrix.Eye(3);
-        sourceMux.port = PORT_REFERENCE_IMAGE;
+        screen.size = speedy_vision_default().Size(0, 0);
         nightvision.gain = NIGHTVISION_GAIN;
         nightvision.offset = NIGHTVISION_OFFSET;
         nightvision.decay = NIGHTVISION_DECAY;
@@ -22588,15 +23122,12 @@ class ImageTrackerPreTrackingState extends ImageTrackerState {
         borderClipper.imageSize = screen.size;
         borderClipper.borderSize = speedy_vision_default().Vector2(0, 0);
         matcher.k = 2;
-        keypointRectifier.transform = speedy_vision_default().Matrix.Eye(3);
-        keypointPortalSource.source = keypointPortalSink;
-        muxOfReferenceKeypoints.port = 0;
-        muxOfBufferOfReferenceKeypoints.port = 0;
-        bufferOfReferenceKeypoints.frozen = false;
+        keypointScaler.transform = speedy_vision_default().Matrix.Eye(3);
         keypointSink.turbo = false;
         // prepare input
-        source.output().connectTo(sourceMux.input('in0')); // port 0: reference image
-        imagePortalSource.output().connectTo(sourceMux.input('in1')); // port 1: camera image (via portal)
+        imagePortalSource.output().connectTo(sourceMux.input('in0'));
+        source.output().connectTo(sourceBuffer.input());
+        sourceBuffer.output().connectTo(sourceMux.input('in1'));
         sourceMux.output().connectTo(screen.input());
         screen.output().connectTo(greyscale.input());
         // preprocess images
@@ -22604,7 +23135,6 @@ class ImageTrackerPreTrackingState extends ImageTrackerState {
         imageRectifier.output().connectTo(nightvisionMux.input('in0'));
         imageRectifier.output().connectTo(nightvision.input());
         nightvision.output().connectTo(nightvisionMux.input('in1'));
-        nightvisionMux.output().connectTo(blur.input());
         // keypoint detection & clipping
         nightvisionMux.output().connectTo(detector.input());
         detector.output().connectTo(borderClipper.input());
@@ -22614,26 +23144,21 @@ class ImageTrackerPreTrackingState extends ImageTrackerState {
         denoiser.output().connectTo(subpixel.input('image'));
         clipper.output().connectTo(subpixel.input('keypoints'));
         // keypoint description
+        nightvisionMux.output().connectTo(blur.input());
         blur.output().connectTo(descriptor.input('image'));
         subpixel.output().connectTo(descriptor.input('keypoints'));
         // keypoint matching
-        descriptor.output().connectTo(muxOfReferenceKeypoints.input('in0'));
-        muxOfBufferOfReferenceKeypoints.output().connectTo(muxOfReferenceKeypoints.input('in1'));
-        muxOfReferenceKeypoints.output().connectTo(matcher.input('database'));
         descriptor.output().connectTo(matcher.input('keypoints'));
-        // store reference keypoints
-        keypointPortalSource.output().connectTo(muxOfBufferOfReferenceKeypoints.input('in0'));
-        bufferOfReferenceKeypoints.output().connectTo(muxOfBufferOfReferenceKeypoints.input('in1'));
-        keypointPortalSource.output().connectTo(bufferOfReferenceKeypoints.input());
-        // portals
-        descriptor.output().connectTo(keypointPortalSink.input());
+        referenceKeypointPortalSource.output().connectTo(matcher.input('database'));
         // prepare output
-        descriptor.output().connectTo(keypointRectifier.input());
-        keypointRectifier.output().connectTo(keypointSink.input());
+        descriptor.output().connectTo(keypointScaler.input());
+        keypointScaler.output().connectTo(keypointPortalSink.input());
+        keypointScaler.output().connectTo(keypointSink.input());
         matcher.output().connectTo(keypointSink.input('matches'));
+        referenceKeypointPortalSource.output().connectTo(referenceKeypointSink.input());
         //imageRectifier.output().connectTo(imageSink.input());
         // done!
-        pipeline.init(source, imagePortalSource, sourceMux, screen, greyscale, imageRectifier, nightvision, nightvisionMux, blur, detector, subpixel, clipper, borderClipper, denoiser, descriptor, keypointPortalSource, muxOfReferenceKeypoints, matcher, bufferOfReferenceKeypoints, muxOfBufferOfReferenceKeypoints, keypointRectifier, keypointSink, keypointPortalSink);
+        pipeline.init(source, imagePortalSource, sourceBuffer, sourceMux, screen, referenceKeypointPortalSource, greyscale, imageRectifier, nightvision, nightvisionMux, detector, borderClipper, clipper, denoiser, subpixel, blur, descriptor, matcher, keypointScaler, keypointSink, keypointPortalSink, referenceKeypointSink);
         return pipeline;
     }
 }
@@ -22682,6 +23207,746 @@ class ImageTrackerEvent extends AREvent {
     }
 }
 
+;// CONCATENATED MODULE: ./src/geometry/quaternion.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * quaternion.ts
+ * Quaternions
+ */
+
+
+/** Small number */
+const EPSILON = 1e-6;
+// public / non-internal methods do not change the contents of the quaternion
+/**
+ * Quaternion q = x i + y j + z k + w
+ */
+class Quaternion {
+    /**
+     * Constructor
+     * @param x x coordinate (imaginary)
+     * @param y y coordinate (imaginary)
+     * @param z z coordinate (imaginary)
+     * @param w w coordinate (real)
+     */
+    constructor(x = 0, y = 0, z = 0, w = 1) {
+        this._x = +x;
+        this._y = +y;
+        this._z = +z;
+        this._w = +w;
+    }
+    /**
+     * Instantiate an identity quaternion q = 1
+     * @returns a new identity quaternion
+     */
+    static Identity() {
+        return new Quaternion(0, 0, 0, 1);
+    }
+    /**
+     * The x coordinate of the quaternion (imaginary)
+     */
+    get x() {
+        return this._x;
+    }
+    /**
+     * The y coordinate of the quaternion (imaginary)
+     */
+    get y() {
+        return this._y;
+    }
+    /**
+     * The z coordinate of the quaternion (imaginary)
+     */
+    get z() {
+        return this._z;
+    }
+    /**
+     * The w coordinate of the quaternion (real)
+     */
+    get w() {
+        return this._w;
+    }
+    /**
+     * The length of this quaternion
+     * @returns sqrt(x^2 + y^2 + z^2 + w^2)
+     */
+    length() {
+        const x = this._x;
+        const y = this._y;
+        const z = this._z;
+        const w = this._w;
+        return Math.sqrt(x * x + y * y + z * z + w * w);
+    }
+    /**
+     * Check if this and q have the same coordinates
+     * @param q a quaternion
+     * @returns true if this and q have the same coordinates
+     */
+    equals(q) {
+        return this._w === q._w && this._x === q._x && this._y === q._y && this._z === q._z;
+    }
+    /**
+     * Convert to string
+     * @returns a string
+     */
+    toString() {
+        const x = this._x.toFixed(4);
+        const y = this._y.toFixed(4);
+        const z = this._z.toFixed(4);
+        const w = this._w.toFixed(4);
+        return `Quaternion(${x},${y},${z},${w})`;
+    }
+    /**
+     * Normalize this quaternion
+     * @returns this quaternion, normalized
+     * @internal
+     */
+    _normalize() {
+        const length = this.length();
+        if (length < EPSILON) // zero?
+            return this;
+        this._x /= length;
+        this._y /= length;
+        this._z /= length;
+        this._w /= length;
+        return this;
+    }
+    /**
+     * Conjugate this quaternion
+     * @returns this quaternion, conjugated
+     * @internal
+     */
+    _conjugate() {
+        this._x = -this._x;
+        this._y = -this._y;
+        this._z = -this._z;
+        return this;
+    }
+    /**
+     * Set the coordinates of this quaternion
+     * @param x x-coordinate
+     * @param y y-coordinate
+     * @param z z-coordinate
+     * @param w w-coordinate
+     * @returns this quaternion
+     * @internal
+     */
+    _set(x, y, z, w) {
+        this._x = +x;
+        this._y = +y;
+        this._z = +z;
+        this._w = +w;
+        return this;
+    }
+    /**
+     * Copy q to this
+     * @param q a quaternion
+     * @returns this quaternion
+     * @internal
+     */
+    _copyFrom(q) {
+        this._x = q._x;
+        this._y = q._y;
+        this._z = q._z;
+        this._w = q._w;
+        return this;
+    }
+    /**
+     * Convert a quaternion to a 3x3 rotation matrix
+     * @returns a 3x3 rotation matrix
+     * @internal
+     */
+    _toRotationMatrix() {
+        const length = this.length(); // should be ~ 1
+        // sanity check
+        if (length < EPSILON)
+            return speedy_vision_default().Matrix.Eye(3);
+        // let q = (x,y,z,w) be a unit quaternion
+        const x = this._x / length;
+        const y = this._y / length;
+        const z = this._z / length;
+        const w = this._w / length;
+        /*
+
+        Let q = x i + y j + z k + w be a unit quaternion and
+        p = x_p i + y_p j + z_p k be a purely imaginary quaternion (w_p = 0)
+        representing a vector or point P = (x_p, y_p, z_p) in 3D space.
+
+        Let's rewrite q as q = v + w, where v = x i + y j + z k, and then
+        substitute v by the unit vector u = v / |v|, so that q = |v| u + w.
+        Since q is a unit quaternion, it follows that:
+
+        1 = |q|^2 = x^2 + y^2 + z^2 + w^2 = |v|^2 + w^2.
+
+        Given that cos(t~)^2 + sin(t~)^2 = 1 for all real t~, there is a real t
+        such that cos(t) = w and sin(t) = |v|. Let's rewrite q as:
+
+        q = cos(t) + u sin(t)
+
+        (since 0 <= |v| = sin(t), it follows that 0 <= t <= pi)
+
+        A rotation of P, of 2t radians around axis u, can be computed as:
+
+        r_q(p) = q p q*
+
+        where q* is the conjugate of q. (note: since |q| = 1, q q* = q* q = 1)
+
+        ---
+
+        Let h = x_h i + y_h j + z_h k + w_h be a quaternion. The multplication
+        q h can be performed by pre-multiplying h, written as a column vector,
+        by the following L_q matrix:
+
+                      [  w  -z   y   x  ] [ x_h ]
+        q h = L_q h = [  z   w  -x   y  ] [ y_h ]
+                      [ -y   x   w   z  ] [ z_h ]
+                      [ -x  -y  -z   w  ] [ w_h ]
+
+        (expand q h = (x i + y j + z k + w) (x_h i + y_h j + z_h k + w_h) to see)
+
+        Similarly, the product h q* can be expressed by pre-multiplying h by the
+        following R_q* matrix:
+
+                        [  w  -z   y  -x ] [ x_h ]
+        h q* = R_q* h = [  z   w  -x  -y ] [ y_h ]
+                        [ -y   x   w  -z ] [ z_h ]
+                        [  x   y   z   w ] [ w_h ]
+
+        (expand h q* = (x_h i + y_h j + z_h k + w_h) (-x i - y j - z k + w) to see)
+
+        ---
+
+        Although quaternion multiplication is not commutative, it is associative,
+        i.e., r_q(p) = (q p)q* = q(p q*). From the matrix equations above, it
+        follows that r_q(p) can be expressed as R_q* L_q p = L_q R_q* p. If we
+        define M_q = L_q R_q* = R_q* L_q, we can write r_q(p) = M_q p. Matrix M_q
+        has the following form:
+
+              [ w^2 + x^2 - y^2 - z^2  2xy - 2wz              2xz + 2wy              0 ]
+        M_q = [ 2xy + 2wz              w^2 - x^2 + y^2 - z^2  2yz - 2wx              0 ]
+              [ 2xz - 2wy              2yz + 2wx              w^2 - x^2 - y^2 + z^2  0 ]
+              [ 0                      0                      0                      1 ]
+
+        Note: the bottom-right entry is x^2 + y^2 + z^2 + w^2 = |q|^2 = 1.
+
+        Let M be the top-left 3x3 submatrix of M_q. A direct, but boring,
+        computation shows that M'M = M M' = I, where M' is the transpose of M.
+        In addition, det M = |q|^6 = +1. Therefore, M is a 3x3 rotation matrix.
+
+        */
+        const x2 = x * x, y2 = y * y, z2 = z * z; //, w2 = w*w;
+        const xy = 2 * x * y, xz = 2 * x * z, yz = 2 * y * z;
+        const wx = 2 * w * x, wy = 2 * w * y, wz = 2 * w * z;
+        return speedy_vision_default().Matrix(3, 3, [
+            1 - 2 * (y2 + z2), xy + wz, xz - wy,
+            xy - wz, 1 - 2 * (x2 + z2), yz + wx,
+            xz + wy, yz - wx, 1 - 2 * (x2 + y2)
+        ]);
+    }
+    /**
+     * Convert a 3x3 rotation matrix to a unit quaternion
+     * @param m a 3x3 rotation matrix. You should ensure that it is a rotation matrix
+     * @returns this quaternion
+     * @internal
+     */
+    _fromRotationMatrix(m) {
+        if (m.rows != 3 || m.columns != 3)
+            throw new IllegalArgumentError();
+        /*
+
+        Let M be the rotation matrix defined above. We're going to find a
+        unit quaternion q associated with M.
+
+        Before we begin, note that q and (-q) encode the same rotation, for
+        r_(-q)(p) = (-q)p(-q)* = (-1)q p (-1)q* = (-1)(-1)q p q* = q p q* = r_q(p).
+        Quaternion multiplication is commutative when a factor is a scalar, i.e.,
+        d p = p d for a real d and a quaternion p (check: distributive operation).
+
+        The trace of M, denoted as tr M, is 3w^2 - x^2 - y^2 - z^2. Since |q| = 1,
+        it follows that tr M = 3w^2 - (1 - w^2), which means that 4w^2 = 1 + tr M.
+        That being the case, we can write:
+
+        |w| = sqrt(1 + tr M) / 2
+
+        We'll arbitrarily pick w >= 0, for q and (-q) encode the same rotation.
+
+        Let mij denote the element at the i-th row and at the j-th column of M.
+        A direct verification shows that m21 - m12 = 4wz. Since w >= 0, it follows
+        that sign(z) = sign(m21 - m12). Similarly, sign(y) = sign(m13 - m31) and
+        sign(x) = sign(m32 - m23).
+
+        The quantity m11 + m22 is equal to 2w^2 - 2z^2, which means that 4z^2 =
+        4w^2 - 2(m11 + m22) = (1 + tr M) - 2(m11 + m22). Therefore, let's write:
+
+        |z| = sqrt((1 + tr M) - 2(m11 + m22)) / 2
+
+        Of course, z = |z| sign(z). Similarly,
+
+        |y| = sqrt((1 + tr M) - 2(m11 + m33)) / 2
+
+        |x| = sqrt((1 + tr M) - 2(m22 + m33)) / 2
+
+        This gives (x, y, z, w).
+
+        ---
+
+        We quickly verify that (1 + tr M) - 2(m11 + m22) >= 0 if M is (really)
+        a rotation matrix: (1 + tr M) - 2(m11 + m22) = 1 + tr M - 2(tr M - m33) =
+        1 - tr M + 2 m33 = 1 - (3w^2 - x^2 - y^2 - z^2) + 2(w^2 - x^2 - y^2 + z^2) =
+        1 - w^2 + z^2 = (x^2 + y^2 + z^2 + w^2) - w^2 + z^2 = x^2 + y^2 + 2 z^2 >= 0.
+        Similarly, (1 + tr M) - 2(m11 + m33) >= 0 and (1 + tr M) - 2(m22 + m33) >= 0.
+
+        */
+        const data = m.read();
+        const m11 = data[0], m21 = data[1], m31 = data[2], m12 = data[3], m22 = data[4], m32 = data[5], m13 = data[6], m23 = data[7], m33 = data[8];
+        const tr = 1 + m11 + m22 + m33; // 1 + tr M
+        const sx = +(m32 >= m23) - +(m32 < m23); // sign(x)
+        const sy = +(m13 >= m31) - +(m13 < m31); // sign(y)
+        const sz = +(m21 >= m12) - +(m21 < m12); // sign(z)
+        const w = 0.5 * Math.sqrt(Math.max(0, tr)); // |w| = w
+        const x = 0.5 * Math.sqrt(Math.max(0, tr - 2 * (m22 + m33))); // |x|
+        const y = 0.5 * Math.sqrt(Math.max(0, tr - 2 * (m11 + m33))); // |y|
+        const z = 0.5 * Math.sqrt(Math.max(0, tr - 2 * (m11 + m22))); // |z|
+        const length = Math.sqrt(x * x + y * y + z * z + w * w); // should be ~ 1
+        this._x = (x * sx) / length;
+        this._y = (y * sy) / length;
+        this._z = (z * sz) / length;
+        this._w = w / length;
+        return this;
+    }
+    /**
+     * Clone this quaternion
+     * @returns a clone of this quaternion
+     * @internal
+     */
+    _clone() {
+        return new Quaternion(this._x, this._y, this._z, this._w);
+    }
+}
+
+;// CONCATENATED MODULE: ./src/geometry/vector3.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * vector3.ts
+ * 3D vectors
+ */
+/** Small number */
+const vector3_EPSILON = 1e-6;
+/** Immutable zero vector */
+let ZERO = null;
+// public / non-internal methods do not change the contents of the vector
+/**
+ * A vector in 3D space
+ */
+class Vector3 {
+    /**
+     * Constructor
+     */
+    constructor(x = 0, y = 0, z = 0) {
+        this._x = +x;
+        this._y = +y;
+        this._z = +z;
+    }
+    /**
+     * Instantiate a zero vector
+     * @returns a new zero vector
+     */
+    static Zero() {
+        return new Vector3(0, 0, 0);
+    }
+    /**
+     * Immutable zero vector
+     * @returns an immutable zero vector
+     */
+    static get ZERO() {
+        return ZERO || (ZERO = Object.freeze(Vector3.Zero()));
+    }
+    /**
+     * The x coordinate of the vector
+     */
+    get x() {
+        return this._x;
+    }
+    /**
+     * The y coordinate of the vector
+     */
+    get y() {
+        return this._y;
+    }
+    /**
+     * The z coordinate of the vector
+     */
+    get z() {
+        return this._z;
+    }
+    /**
+     * The length of this vector
+     * @returns sqrt(x^2 + y^2 + z^2)
+     */
+    length() {
+        const x = this._x;
+        const y = this._y;
+        const z = this._z;
+        return Math.sqrt(x * x + y * y + z * z);
+    }
+    /**
+     * Compute the dot product of this and v
+     * @param v a vector
+     * @returns the dot product of the vectors
+     */
+    dot(v) {
+        return this._x * v._x + this._y * v._y + this._z * v._z;
+    }
+    /**
+     * Compute the distance between points this and v
+     * @param v a vector / point
+     * @returns the distance between the points
+     */
+    distanceTo(v) {
+        const dx = this._x - v._x;
+        const dy = this._y - v._y;
+        const dz = this._z - v._z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    /**
+     * Compute the direction from this to v
+     * @param v a vector
+     * @returns a new unit vector pointing to v from this
+     */
+    directionTo(v) {
+        return v._clone()._subtract(this)._normalize();
+    }
+    /**
+     * The cross product of this and v
+     * @param v a vector
+     * @returns the cross product this x v
+     */
+    cross(v) {
+        const x = this._y * v._z - this._z * v._y;
+        const y = this._z * v._x - this._x * v._z;
+        const z = this._x * v._y - this._y * v._x;
+        return new Vector3(x, y, z);
+    }
+    /**
+     * Compute a unit vector with the same direction as this
+     * @returns a new unit vector with the same direction as this
+     */
+    normalized() {
+        return this._clone()._normalize();
+    }
+    /**
+     * Compute the sum between this vector and v
+     * @param v a vector
+     * @returns a new vector equal to the sum between this and v
+     */
+    plus(v) {
+        return this._clone()._add(v);
+    }
+    /**
+     * Compute the difference between this vector and v
+     * @param v a vector
+     * @returns a new vector equal to the difference this - v
+     */
+    minus(v) {
+        return this._clone()._subtract(v);
+    }
+    /**
+     * Compute the multiplication between this vector and a scale factor
+     * @param scale scalar quantity
+     * @returns a new vector equal to the multiplication between this and the scale factor
+     */
+    times(scale) {
+        return this._clone()._scale(scale);
+    }
+    /**
+     * Check if this and v have the same coordinates
+     * @param v a vector
+     * @returns true if this and v have the same coordinates
+     */
+    equals(v) {
+        return this._x === v._x && this._y === v._y && this._z === v._z;
+    }
+    /**
+     * Convert to string
+     * @returns a string
+     */
+    toString() {
+        const x = this._x.toFixed(5);
+        const y = this._y.toFixed(5);
+        const z = this._z.toFixed(5);
+        return `Vector3(${x},${y},${z})`;
+    }
+    /**
+     * Set the coordinates of this vector
+     * @param x x-coordinate
+     * @param y y-coordinate
+     * @param z z-coordinate
+     * @returns this vector
+     * @internal
+     */
+    _set(x, y, z) {
+        this._x = +x;
+        this._y = +y;
+        this._z = +z;
+        return this;
+    }
+    /**
+     * Copy v to this
+     * @param v a vector
+     * @returns this vector
+     * @internal
+     */
+    _copyFrom(v) {
+        this._x = v._x;
+        this._y = v._y;
+        this._z = v._z;
+        return this;
+    }
+    /**
+     * Normalize this vector
+     * @returns this vector, normalized
+     * @internal
+     */
+    _normalize() {
+        const length = this.length();
+        if (length < vector3_EPSILON) // zero?
+            return this;
+        this._x /= length;
+        this._y /= length;
+        this._z /= length;
+        return this;
+    }
+    /**
+     * Add v to this vector
+     * @param v a vector
+     * @returns this vector
+     * @internal
+     */
+    _add(v) {
+        this._x += v._x;
+        this._y += v._y;
+        this._z += v._z;
+        return this;
+    }
+    /**
+     * Subtract v from this vector
+     * @param v a vector
+     * @returns this vector
+     * @internal
+     */
+    _subtract(v) {
+        this._x -= v._x;
+        this._y -= v._y;
+        this._z -= v._z;
+        return this;
+    }
+    /**
+     * Scale this vector by a scalar
+     * @param s scalar
+     * @returns this vector
+     * @internal
+     */
+    _scale(s) {
+        this._x *= s;
+        this._y *= s;
+        this._z *= s;
+        return this;
+    }
+    /**
+     * Compute the rotation q p q* in place, where q is a unit quaternion,
+     * q* is its conjugate and multiplicative inverse, and p is this vector
+     * @param q unit quaternion
+     * @returns this vector
+     * @internal
+     */
+    _applyRotationQuaternion(q) {
+        // based on Quaternion._toRotationMatrix()
+        const x = q.x, y = q.y, z = q.z, w = q.w;
+        const vx = this._x, vy = this._y, vz = this._z;
+        const x2 = x * x, y2 = y * y, z2 = z * z;
+        const xy = 2 * x * y, xz = 2 * x * z, yz = 2 * y * z;
+        const wx = 2 * w * x, wy = 2 * w * y, wz = 2 * w * z;
+        this._x = (1 - 2 * (y2 + z2)) * vx + (xy - wz) * vy + (xz + wy) * vz;
+        this._y = (xy + wz) * vx + (1 - 2 * (x2 + z2)) * vy + (yz - wx) * vz;
+        this._z = (xz - wy) * vx + (yz + wx) * vy + (1 - 2 * (x2 + y2)) * vz;
+        return this;
+    }
+    /**
+     * Clone this vector
+     * @returns a clone of this vector
+     * @internal
+     */
+    _clone() {
+        return new Vector3(this._x, this._y, this._z);
+    }
+}
+
+;// CONCATENATED MODULE: ./src/geometry/pose-filter.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * pose-filter.ts
+ * Smoothing filter for a pose
+ */
+
+
+
+
+
+/** Number of translation samples */
+const TRANSLATION_SAMPLES = 5;
+/** Number of rotation samples */
+const ROTATION_SAMPLES = 12;
+/** A vector representing "no translation" */
+const NO_TRANSLATION = Vector3.Zero();
+/** A quaternion representing "no rotation" */
+const NO_ROTATION = Quaternion.Identity();
+/** The zero quaternion */
+const ZERO_QUATERNION = new Quaternion(0, 0, 0, 0);
+/**
+ * Smoothing filter for a pose
+ */
+class PoseFilter {
+    /**
+     * Constructor
+     */
+    constructor() {
+        this._smoothRotation = Quaternion.Identity();
+        this._smoothTranslation = Vector3.Zero();
+        this._rotationSample = Array.from({ length: ROTATION_SAMPLES }, () => Quaternion.Identity());
+        this._translationSample = Array.from({ length: TRANSLATION_SAMPLES }, () => Vector3.Zero());
+        this._isEmpty = true;
+    }
+    /**
+     * Reset the filter
+     */
+    reset() {
+        this._rotationSample.forEach(q => q._copyFrom(NO_ROTATION));
+        this._translationSample.forEach(t => t._copyFrom(NO_TRANSLATION));
+        this._isEmpty = true;
+    }
+    /**
+     * Feed the filter with a sample
+     * @param sample 3x4 [ R | t ] matrix
+     * @returns true on success
+     */
+    feed(sample) {
+        const data = sample.read();
+        // sanity check
+        if (sample.rows != 3 || sample.columns != 4)
+            throw new IllegalArgumentError();
+        // discard invalid samples
+        if (Number.isNaN(data[0] * data[9])) // rotation, translation
+            return false;
+        // store sample
+        const q = this._rotationSample[ROTATION_SAMPLES - 1];
+        for (let i = ROTATION_SAMPLES - 1; i > 0; i--)
+            this._rotationSample[i] = this._rotationSample[i - 1];
+        this._rotationSample[0] = q._fromRotationMatrix(sample.block(0, 2, 0, 2));
+        const t = this._translationSample[TRANSLATION_SAMPLES - 1];
+        for (let i = TRANSLATION_SAMPLES - 1; i > 0; i--)
+            this._translationSample[i] = this._translationSample[i - 1];
+        this._translationSample[0] = t._set(data[9], data[10], data[11]);
+        // empty buffers?
+        if (this._isEmpty) {
+            this._rotationSample.forEach((q, i) => i > 0 && q._copyFrom(this._rotationSample[0]));
+            this._translationSample.forEach((t, i) => i > 0 && t._copyFrom(this._translationSample[0]));
+            this._isEmpty = false;
+        }
+        // done!
+        return true;
+    }
+    /**
+     * Run the filter
+     * @returns a 3x4 [ R | t ] matrix
+     */
+    output() {
+        // how many samples should we use, at most?
+        const div = (Settings.powerPreference == 'low-power') ? 1.5 : 1; // low-power ~ half the fps
+        const T = Math.ceil(TRANSLATION_SAMPLES / div);
+        const R = Math.ceil(ROTATION_SAMPLES / div);
+        // clear the output of the filter
+        const t = this._smoothTranslation._copyFrom(NO_TRANSLATION);
+        const q = this._smoothRotation._copyFrom(ZERO_QUATERNION);
+        // average translations
+        for (let i = 0, d = 2 / (T * T + T); i < T; i++) {
+            const ti = this._translationSample[i];
+            const w = (T - i) * d;
+            // weighted avg: sum from i=0 to T-1 { (T-i) * t[i] } * (2/(T^2+T))
+            t._set(t.x + ti.x * w, t.y + ti.y * w, t.z + ti.z * w);
+        }
+        // average *nearby* rotations
+        // based on https://web.archive.org/web/20130514122622/http://wiki.unity3d.com/index.php/Averaging_Quaternions_and_Vectors
+        // reminder: a unit quaternion q may be expressed as
+        // cos t + u sin t, where 2t is a rotation angle and u is a rotation axis
+        for (let i = 0; i < R; i++) {
+            const qi = this._rotationSample[i];
+            const w = 1 / R; //(R - (i - i%2)) / R;
+            // since unit quaternions qi and -qi encode the same rotation
+            // (see quaternion.ts), let's enforce dot(qi, 1) = qi.w >= 0
+            if (qi.w < 0) {
+                // XXX since Quaternion._fromRotationMatrix() computes w >= 0,
+                // this will never happen. Leave this here for extra safety
+                // in case anything changes?
+                qi._set(-qi.x, -qi.y, -qi.z, -qi.w);
+            }
+            q._set(q.x + qi.x * w, q.y + qi.y * w, q.z + qi.z * w, q.w + qi.w * w);
+        }
+        //q._normalize();
+        // convert to matrix form and return
+        const entries = q._toRotationMatrix().read();
+        entries.push(t.x, t.y, t.z);
+        return speedy_vision_default().Matrix(3, 4, entries);
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/geometry/camera-model.ts
 /*
  * encantar.js
@@ -22710,18 +23975,14 @@ class ImageTrackerEvent extends AREvent {
 
 /** A guess of the horizontal field-of-view of a typical camera, in degrees */
 const HFOV_GUESS = 60; // https://developer.apple.com/library/archive/documentation/DeviceInformation/Reference/iOSDeviceCompatibility/Cameras/Cameras.html
-/** Number of iterations used to refine the estimated pose */
-const POSE_ITERATIONS = 30;
-/** Number of samples used in the rotation filter */
-const ROTATION_FILTER_SAMPLES = 10;
-/** Number of samples used in the translation filter */
-const TRANSLATION_FILTER_SAMPLES = 5;
+/** The default scale of the image plane. The scale affects the focal length */
+const DEFAULT_SCALE = 2; // the length of the [-1,+1] interval
 /** Convert degrees to radians */
 const DEG2RAD = 0.017453292519943295; // pi / 180
 /** Convert radians to degrees */
 const RAD2DEG = 57.29577951308232; // 180 / pi
 /** Numerical tolerance */
-const EPSILON = 1e-6;
+const camera_model_EPSILON = 1e-6;
 /** Index of the horizontal focal length in the camera intrinsics matrix (column-major format) */
 const FX = 0;
 /** Index of the vertical focal length in the camera intrinsics matrix */
@@ -22730,6 +23991,14 @@ const FY = 4;
 const U0 = 6;
 /** Index of the vertical position of the principal point in the camera intrinsics matrix */
 const V0 = 7;
+/** Number of iterations used to refine the estimated pose */
+const POSE_REFINEMENT_ITERATIONS = 30;
+/** Maximum number of iterations used when refining the translation vector */
+const TRANSLATION_REFINEMENT_ITERATIONS = 15;
+/** Tolerance used to exit early when refining the translation vector */
+const TRANSLATION_REFINEMENT_TOLERANCE = DEFAULT_SCALE * 0.01;
+/** Size of the grid used to refine the translation vector */
+const TRANSLATION_REFINEMENT_GRIDSIZE = 5; //3;
 /**
  * Camera model
  */
@@ -22738,28 +24007,39 @@ class CameraModel {
      * Constructor
      */
     constructor() {
-        this._screenSize = speedy_vision_default().Size(0, 0);
+        this._imageSize = speedy_vision_default().Size(0, 0);
         this._matrix = speedy_vision_default().Matrix.Eye(3, 4);
         this._intrinsics = [1, 0, 0, 0, 1, 0, 0, 0, 1]; // 3x3 identity matrix
         this._extrinsics = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]; // 3x4 matrix [ R | t ] = [ I | 0 ] no rotation & no translation
-        this._partialRotationBuffer = [];
-        this._translationBuffer = [];
+        this._filter = new PoseFilter();
+        this._flipZ = speedy_vision_default().Matrix(4, 4, [
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, -1, 0,
+            0, 0, 0, 1
+        ]);
     }
     /**
      * Initialize the model
-     * @param screenSize
+     * @param aspectRatio aspect ratio of the image plane
+     * @param scale optional scale factor of the image plane
      */
-    init(screenSize) {
-        // validate
-        if (screenSize.area() == 0)
-            throw new IllegalArgumentError(`Can't initialize the camera model with screenSize = ${screenSize.toString()}`);
-        // set the screen size
-        this._screenSize.width = screenSize.width;
-        this._screenSize.height = screenSize.height;
-        // reset the model
-        this.reset();
+    init(aspectRatio, scale = DEFAULT_SCALE) {
         // log
         Utils.log(`Initializing the camera model...`);
+        Utils.assert(aspectRatio > 0 && scale > 1e-5);
+        // set the size of the image plane
+        // this rule is conceived so that min(w,h) = s and w/h = a
+        if (aspectRatio >= 1) {
+            this._imageSize.width = aspectRatio * scale;
+            this._imageSize.height = scale;
+        }
+        else {
+            this._imageSize.width = scale;
+            this._imageSize.height = scale / aspectRatio;
+        }
+        // reset the model
+        this.reset();
     }
     /**
      * Release the model
@@ -22770,146 +24050,132 @@ class CameraModel {
     }
     /**
      * Update the camera model
-     * @param homography 3x3 perspective transform
-     * @param screenSize may change over time (e.g., when going from portrait to landscape or vice-versa)
-     * @returns promise that resolves to a camera matrix
+     * @param homographyNDC 3x3 perspective transform
+     * @returns a promise that resolves to a camera matrix
      */
-    update(homography, screenSize) {
-        // validate the shape of the homography
-        if (homography.rows != 3 || homography.columns != 3)
-            throw new IllegalArgumentError(`Camera model: provide a homography matrix`);
-        // validate screenSize
-        if (screenSize.area() == 0)
-            throw new IllegalArgumentError(`Camera model: invalid screenSize = ${screenSize.toString()}`);
-        // changed screen size?
-        if (!this._screenSize.equals(screenSize)) {
-            Utils.log(`Camera model: detected a change in screen size...`);
-            // update the screen size
-            this._screenSize.width = screenSize.width;
-            this._screenSize.height = screenSize.height;
-            // reset camera
-            this.reset();
-        }
+    update(homographyNDC) {
+        Utils.assert(homographyNDC.rows == 3 && homographyNDC.columns == 3);
+        // convert to image space
+        const homography = this._convertToImageSpace(homographyNDC);
         // read the entries of the homography
         const h = homography.read();
         const h11 = h[0], h12 = h[3], h13 = h[6], h21 = h[1], h22 = h[4], h23 = h[7], h31 = h[2], h32 = h[5], h33 = h[8];
         // validate the homography (homography matrices aren't singular)
         const det = h13 * (h21 * h32 - h22 * h31) - h23 * (h11 * h32 - h12 * h31) + h33 * (h11 * h22 - h12 * h21);
-        if (Math.abs(det) < EPSILON) {
-            Utils.warning(`Can't update the camera model using an invalid homography matrix`);
-            return speedy_vision_default().Promise.resolve(this._matrix);
-        }
+        if (Math.abs(det) < camera_model_EPSILON || Number.isNaN(det))
+            return speedy_vision_default().Promise.reject(new NumericalError(`Can't update the camera model using an invalid homography matrix`));
         // estimate the pose
         const pose = this._estimatePose(homography);
-        this._extrinsics = pose.read();
+        if (this._filter.feed(pose))
+            this._extrinsics = this._filter.output().read();
         // compute the camera matrix
-        const C = this.denormalizer();
+        const Z = this._flipZ; // switch to a right handed system
         const K = speedy_vision_default().Matrix(3, 3, this._intrinsics);
-        const E = pose; //Speedy.Matrix(3, 4, this._extrinsics);
-        this._matrix.setToSync(K.times(E).times(C));
-        //console.log("intrinsics -----------", K.toString());
-        //console.log("matrix ----------------",this._matrix.toString());
+        const E = speedy_vision_default().Matrix(3, 4, this._extrinsics);
+        this._matrix.setToSync(K.times(E).times(Z));
+        /*
+        // test
+        console.log("homography ------------", homography.toString());
+        console.log("intrinsics ------------", K.toString());
+        console.log("extrinsics ------------", E.toString());
+        console.log("extrinsicsINV ---------", Speedy.Matrix(this.computeViewMatrix().inverse()).toString());
+        console.log("matrix ----------------", this._matrix.toString());
+        console.log("projectionMatrix ----- ", this.computeProjectionMatrix(0.1,100).toString());
+        */
+        // done!
         return speedy_vision_default().Promise.resolve(this._matrix);
     }
     /**
-     * Reset camera model
+     * Reset the camera model
      */
     reset() {
         this._resetIntrinsics();
         this._resetExtrinsics();
     }
     /**
-     * The camera matrix that maps the 3D normalized space [-1,1]^3 to the
-     * 2D AR screen space (measured in pixels)
-     * @returns 3x4 camera matrix
+     * The 3x4 camera matrix
      */
     get matrix() {
         return this._matrix;
     }
     /**
-     * Camera intrinsics matrix
-     * @returns 3x3 intrinsics matrix in column-major format
+     * The size of the image plane
      */
-    get intrinsics() {
-        return this._intrinsics;
+    get imageSize() {
+        return this._imageSize;
     }
     /**
-     * Camera extrinsics matrix
-     * @returns 3x4 extrinsics matrix [ R | t ] in column-major format
+     * The aspect ratio of the image
      */
-    get extrinsics() {
-        return this._extrinsics;
+    get aspectRatio() {
+        return this._imageSize.width / this._imageSize.height;
     }
     /**
-     * Convert coordinates from normalized space [-1,1]^3 to a
-     * "3D pixel space" based on the dimensions of the AR screen.
-     *
-     * We perform a 180-degrees rotation around the x-axis so that
-     * it looks nicer (the y-axis grows downwards in image space).
-     *
-     * The final camera matrix is P = K * [ R | t ] * C, where
-     * C is this conversion matrix. The intent behind this is to
-     * make tracking independent of target and screen sizes.
-     *
-     * Reminder: we use a right-handed coordinate system in 3D!
-     * In 2D image space the coordinate system is left-handed.
-     *
-     * @returns 4x4 conversion matrix C
-     */
-    denormalizer() {
-        const w = this._screenSize.width / 2; // half width, in pixels
-        const h = this._screenSize.height / 2; // half height, in pixels
-        const d = Math.min(w, h); // virtual unit length, in pixels
-        /*
-        return Speedy.Matrix(4, 4, [
-            1, 0, 0, 0,
-            0,-1, 0, 0,
-            0, 0,-1, 0,
-            w/d, h/d, 0, 1/d
-        ]);
-        */
-        return speedy_vision_default().Matrix(4, 4, [
-            d, 0, 0, 0,
-            0, -d, 0, 0,
-            0, 0, -d, 0,
-            w, h, 0, 1,
-        ]);
-    }
-    /**
-     * Size of the AR screen space, in pixels
-     * @returns size in pixels
-     */
-    get screenSize() {
-        return this._screenSize;
-    }
-    /**
-     * Focal length in pixel units (projection distance in the pinhole camera model)
-     * same as (focal length in mm) * (number of pixels per world unit in pixels/mm)
-     * @returns focal length
+     * Focal length in "pixels" (projection distance in the pinhole camera model)
+     * same as (focal length in mm) * (number of "pixels" per world unit in "pixels"/mm)
+     * "pixels" means image plane units
      */
     get focalLength() {
-        return this._intrinsics[FY]; // fx == fy
+        return this._intrinsics[FX]; // fx == fy
     }
     /**
      * Horizontal field-of-view, given in radians
-     * @returns vertical field-of-view
      */
     get fovx() {
-        return 2 * Math.atan(this._intrinsics[U0] / this._intrinsics[FX]);
+        const halfWidth = this._imageSize.width / 2;
+        return 2 * Math.atan(halfWidth / this._intrinsics[FX]);
     }
     /**
      * Vertical field-of-view, given in radians
-     * @returns vertical field-of-view
      */
     get fovy() {
-        return 2 * Math.atan(this._intrinsics[V0] / this._intrinsics[FY]);
+        const halfHeight = this._imageSize.height / 2;
+        return 2 * Math.atan(halfHeight / this._intrinsics[FY]);
     }
     /**
-     * Principal point
-     * @returns principal point, in pixel coordinates
+     * Compute the view matrix. This 4x4 matrix moves 3D points from
+     * world space to view space. We want the camera looking in the
+     * direction of the negative z-axis (WebGL-friendly)
+     * @returns a view matrix
      */
-    principalPoint() {
-        return speedy_vision_default().Point2(this._intrinsics[U0], this._intrinsics[V0]);
+    computeViewMatrix() {
+        const E = this._extrinsics;
+        // We augment the 3x4 extrinsics matrix E with the [ 0  0  0  1 ] row
+        // and get E+. Let Z be 4x4 flipZ, the identity matrix with the third
+        // column negated. The following matrix is View = Z * E+ * Z. We get
+        // the camera looking in the direction of the negative z-axis in a
+        // right handed system!
+        return speedy_vision_default().Matrix(4, 4, [
+            E[0], E[1], -E[2], 0,
+            E[3], E[4], -E[5], 0,
+            -E[6], -E[7], +E[8], 0,
+            E[9], E[10], -E[11], 1 // t
+        ]);
+    }
+    /**
+     * Compute a perspective projection matrix for WebGL
+     * @param near distance of the near plane
+     * @param far distance of the far plane
+     */
+    computeProjectionMatrix(near, far) {
+        const fx = this._intrinsics[FX];
+        const fy = this._intrinsics[FY];
+        const halfWidth = this._imageSize.width / 2;
+        const halfHeight = this._imageSize.height / 2;
+        // we assume that the principal point is at the center of the image plane
+        const right = near * (halfWidth / fx);
+        const top = near * (halfHeight / fy);
+        //const top = right * (halfHeight / halfWidth); // same thing
+        const bottom = -top, left = -right; // symmetric frustum
+        // a derivation of this projection matrix can be found at
+        // https://www.songho.ca/opengl/gl_projectionmatrix.html
+        // http://learnwebgl.brown37.net/08_projections/projections_perspective.html
+        return speedy_vision_default().Matrix(4, 4, [
+            2 * near / (right - left), 0, 0, 0,
+            0, 2 * near / (top - bottom), 0, 0,
+            (right + left) / (right - left), (top + bottom) / (top - bottom), -(far + near) / (far - near), -1,
+            0, 0, -2 * far * near / (far - near), 0
+        ]);
     }
     /**
      * Reset camera extrinsics
@@ -22918,17 +24184,16 @@ class CameraModel {
         // set the rotation matrix to the identity
         this._extrinsics.fill(0);
         this._extrinsics[0] = this._extrinsics[4] = this._extrinsics[8] = 1;
-        // reset filters
-        this._partialRotationBuffer.length = 0;
-        this._translationBuffer.length = 0;
+        // reset filter
+        this._filter.reset();
     }
     /**
      * Reset camera intrinsics
      */
     _resetIntrinsics() {
-        const cameraWidth = Math.max(this._screenSize.width, this._screenSize.height); // portrait?
-        const u0 = this._screenSize.width / 2;
-        const v0 = this._screenSize.height / 2;
+        const cameraWidth = Math.max(this._imageSize.width, this._imageSize.height); // portrait or landscape?
+        const u0 = 0; // principal point at the center of the image plane
+        const v0 = 0;
         const fx = (cameraWidth / 2) / Math.tan(DEG2RAD * HFOV_GUESS / 2);
         const fy = fx;
         this._intrinsics[FX] = fx;
@@ -22937,19 +24202,42 @@ class CameraModel {
         this._intrinsics[V0] = v0;
     }
     /**
+     * Convert a homography from NDC to image space
+     * @param homographyNDC
+     * @returns a new homography
+     */
+    _convertToImageSpace(homographyNDC) {
+        const w = this._imageSize.width / 2;
+        const h = this._imageSize.height / 2;
+        // fromNDC converts points from NDC to image space
+        const fromNDC = speedy_vision_default().Matrix(3, 3, [
+            w, 0, 0,
+            0, h, 0,
+            0, 0, 1
+        ]);
+        /*
+        // make h33 = 1 (wanted?)
+        const data = homographyNDC.read();
+        const h33 = data[8];
+        const hom = homographyNDC.times(1/h33);
+        */
+        // convert homography
+        return speedy_vision_default().Matrix(fromNDC.times(homographyNDC));
+    }
+    /**
      * Compute a normalized homography H^ = K^(-1) * H for an
      * ideal pinhole with f = 1 and principal point = (0,0)
      * @param homography homography H to be normalized
      * @returns normalized homography H^
      */
     _normalizeHomography(homography) {
-        const h = homography.read();
         const u0 = this._intrinsics[U0];
         const v0 = this._intrinsics[V0];
         const fx = this._intrinsics[FX];
         const fy = this._intrinsics[FY];
         const u0fx = u0 / fx;
         const v0fy = v0 / fy;
+        const h = homography.read();
         const h11 = h[0] / fx - u0fx * h[2], h12 = h[3] / fx - u0fx * h[5], h13 = h[6] / fx - u0fx * h[8];
         const h21 = h[1] / fy - v0fy * h[2], h22 = h[4] / fy - v0fy * h[5], h23 = h[7] / fy - v0fy * h[8];
         const h31 = h[2], h32 = h[5], h33 = h[8];
@@ -23001,8 +24289,8 @@ class CameraModel {
         r[3] = scale * h12;
         r[4] = scale * h22;
         r[5] = scale * h32;
-        // refine the rotation
-        r = this._refineRotation(r); // r is initially noisy
+        // refine the rotation (r is initially noisy)
+        r = this._refineRotation(r);
         /*
 
         After refining the rotation vectors, let's adjust the scale factor as
@@ -23116,15 +24404,34 @@ class CameraModel {
         // compute the Cholesky decomposition LL' of the diagonal matrix D
         // whose entries are the two eigenvalues of R'R and then invert L
         const s1 = Math.sqrt(eigval1), s2 = Math.sqrt(eigval2); // singular values of R (pick s1 >= s2)
-        const Linv = speedy_vision_default().Matrix(2, 2, [1 / s1, 0, 0, 1 / s2]); // L inverse
+        /*
+        const Linv = Speedy.Matrix(2, 2, [1/s1, 0, 0, 1/s2]); // L inverse
+
         // compute the correction matrix C = Q * Linv * Q', where Q = [q1|q2]
         // is orthogonal and Linv is computed as above
-        const Q = speedy_vision_default().Matrix(2, 2, [x1, y1, x2, y2]);
-        const Qt = speedy_vision_default().Matrix(2, 2, [x1, x2, y1, y2]);
+        const Q = Speedy.Matrix(2, 2, [x1, y1, x2, y2]);
+        const Qt = Speedy.Matrix(2, 2, [x1, x2, y1, y2]);
         const C = Q.times(Linv).times(Qt);
+
         // correct the rotation vectors r1 and r2 using C
-        const R = speedy_vision_default().Matrix(3, 2, [r11, r21, r31, r12, r22, r32]);
-        return speedy_vision_default().Matrix(R.times(C)).read();
+        const R = Speedy.Matrix(3, 2, [r11, r21, r31, r12, r22, r32]);
+        return Speedy.Matrix(R.times(C)).read();
+        */
+        // find C = Q * Linv * Q' manually
+        // [ a  b ] is symmetric
+        // [ b  c ]
+        const a = x1 * x1 / s1 + x2 * x2 / s2;
+        const b = x1 * y1 / s1 + x2 * y2 / s2;
+        const c = y1 * y1 / s1 + y2 * y2 / s2;
+        // find RC manually
+        return [
+            a * r11 + b * r12,
+            a * r21 + b * r22,
+            a * r31 + b * r32,
+            b * r11 + c * r12,
+            b * r21 + c * r22,
+            b * r31 + c * r32
+        ];
     }
     /**
      * Compute a refined translation vector
@@ -23157,20 +24464,27 @@ class CameraModel {
         const r11 = rot[0], r12 = rot[3];
         const r21 = rot[1], r22 = rot[4];
         const r31 = rot[2], r32 = rot[5];
-        // sample points [ xi  yi ]' in AR screen space
-        //const x = [ 0.5, 0.0, 1.0, 1.0, 0.0, 0.5, 1.0, 0.5, 0.0 ];
-        //const y = [ 0.5, 0.0, 0.0, 1.0, 1.0, 0.0, 0.5, 1.0, 0.5 ];
-        const x = [0.5, 0.0, 1.0, 1.0, 0.0];
-        const y = [0.5, 0.0, 0.0, 1.0, 1.0];
-        const n = x.length;
-        const n3 = 3 * n;
-        const width = this._screenSize.width;
-        const height = this._screenSize.height;
-        for (let i = 0; i < n; i++) {
-            x[i] *= width;
-            y[i] *= height;
+        // generate a grid of sample points [ xi  yi ]' in the image
+        //const x = [ 0, -1, +1, +1, -1 ];
+        //const y = [ 0, -1, -1, +1, +1 ];
+        const g = TRANSLATION_REFINEMENT_GRIDSIZE;
+        const x = new Array(g * g);
+        const y = new Array(g * g);
+        const halfWidth = this._imageSize.width / 2;
+        const halfHeight = this._imageSize.height / 2;
+        for (let k = 0, i = 0; i < g; i++) {
+            for (let j = 0; j < g; j++, k++) {
+                // in [-1,+1]
+                x[k] = (i / (g - 1)) * 2 - 1;
+                y[k] = (j / (g - 1)) * 2 - 1;
+                // in [-s/2,+s/2], where s = w,h
+                x[k] *= halfWidth;
+                y[k] *= halfHeight;
+            }
         }
+        //console.log(x.toString(), y.toString());
         // set auxiliary values: ai = H [ xi  yi  1 ]'
+        const n = x.length;
         const a1 = new Array(n);
         const a2 = new Array(n);
         const a3 = new Array(n);
@@ -23181,8 +24495,9 @@ class CameraModel {
         }
         // we'll solve M t = v for t with linear least squares
         // M: 3n x 3, v: 3n x 1, t: 3 x 1
-        const m = new Array(3 * n * 3);
-        const v = new Array(3 * n);
+        const n3 = 3 * n;
+        const m = new Array(n3 * 3);
+        const v = new Array(n3);
         for (let i = 0, k = 0; k < n; i += 3, k++) {
             m[i] = m[i + n3 + 1] = m[i + n3 + n3 + 2] = 0;
             m[i + n3] = -(m[i + 1] = a3[k]);
@@ -23249,9 +24564,7 @@ class CameraModel {
         t[1] = t0[1];
         t[2] = t0[2];
         // iterate
-        const MAX_ITERATIONS = 15;
-        const TOLERANCE = 1;
-        for (let it = 0; it < MAX_ITERATIONS; it++) {
+        for (let it = 0; it < TRANSLATION_REFINEMENT_ITERATIONS; it++) {
             //console.log("it",it+1);
             // compute residual r = Mt - v
             for (let i = 0; i < n3; i++) {
@@ -23276,8 +24589,8 @@ class CameraModel {
             let num = 0;
             for (let i = 0; i < 3; i++)
                 num += c[i] * c[i];
-            //console.log("c'c=",num);
-            if (num < TOLERANCE)
+            //console.log("c'c=",num," at #",it+1);
+            if (num < TRANSLATION_REFINEMENT_TOLERANCE)
                 break;
             // compute (Mc)'(Mc)
             let den = 0;
@@ -23297,63 +24610,14 @@ class CameraModel {
         return t;
     }
     /**
-     * Apply a smoothing filter to the partial pose
-     * @param partialPose 3x3 [ r1 | r2 | t ]
-     * @returns filtered partial pose
+     * Find a 3x3 rotation matrix R given two orthonormal vectors [ r1 | r2 ]
+     * @param partialRotation partial rotation matrix [ r1 | r2 ] in column-major format
+     * @returns a rotation matrix R in column-major format
      */
-    _filterPartialPose(partialPose) {
-        const avg = new Array(9).fill(0);
-        const entries = partialPose.read();
-        const rotationBlock = entries.slice(0, 6);
-        const translationBlock = entries.slice(6, 9);
-        // how many samples should we store, at most?
-        const div = (Settings.powerPreference == 'low-power') ? 1.5 : 1; // low-power ~ half the fps
-        const N = Math.ceil(ROTATION_FILTER_SAMPLES / div);
-        const M = Math.ceil(TRANSLATION_FILTER_SAMPLES / div);
-        // is it a valid partial pose?
-        if (!Number.isNaN(entries[0])) {
-            // store samples
-            this._partialRotationBuffer.unshift(rotationBlock);
-            if (this._partialRotationBuffer.length > N)
-                this._partialRotationBuffer.length = N;
-            this._translationBuffer.unshift(translationBlock);
-            if (this._translationBuffer.length > M)
-                this._translationBuffer.length = M;
-        }
-        else if (this._partialRotationBuffer.length == 0) {
-            // invalid pose, no samples
-            return speedy_vision_default().Matrix.Eye(3);
-        }
-        // average *nearby* rotations
-        const n = this._partialRotationBuffer.length;
-        for (let i = 0; i < n; i++) {
-            const r = this._partialRotationBuffer[i];
-            for (let j = 0; j < 6; j++)
-                avg[j] += r[j] / n;
-        }
-        const r = this._refineRotation(avg);
-        // average translations
-        const m = this._translationBuffer.length;
-        for (let i = 0; i < m; i++) {
-            const t = this._translationBuffer[i];
-            for (let j = 0; j < 3; j++)
-                avg[6 + j] += (m - i) * t[j] / ((m * m + m) / 2);
-            //avg[6 + j] += t[j] / m;
-        }
-        const t = [avg[6], avg[7], avg[8]];
-        // done!
-        return speedy_vision_default().Matrix(3, 3, r.concat(t));
-    }
-    /**
-     * Estimate extrinsics [ R | t ] given a partial pose [ r1 | r2 | t ]
-     * @param partialPose
-     * @returns 3x4 matrix
-     */
-    _estimateFullPose(partialPose) {
-        const p = partialPose.read();
-        const r11 = p[0], r12 = p[3], t1 = p[6];
-        const r21 = p[1], r22 = p[4], t2 = p[7];
-        const r31 = p[2], r32 = p[5], t3 = p[8];
+    _computeFullRotation(partialRotation) {
+        const r11 = partialRotation[0], r12 = partialRotation[3];
+        const r21 = partialRotation[1], r22 = partialRotation[4];
+        const r31 = partialRotation[2], r32 = partialRotation[5];
         // r3 = +- ( r1 x r2 )
         let r13 = r21 * r32 - r31 * r22;
         let r23 = r31 * r12 - r11 * r32;
@@ -23366,15 +24630,14 @@ class CameraModel {
             r33 = -r33;
         }
         // done!
-        return speedy_vision_default().Matrix(3, 4, [
+        return [
             r11, r21, r31,
             r12, r22, r32,
-            r13, r23, r33,
-            t1, t2, t3,
-        ]);
+            r13, r23, r33
+        ];
     }
     /**
-     * Estimate the pose [ R | t ] given a homography in AR screen space
+     * Estimate the pose [ R | t ] given a homography in sensor space
      * @param homography must be valid
      * @returns 3x4 matrix
      */
@@ -23387,7 +24650,7 @@ class CameraModel {
         // it won't be a perfect equality due to noise in the homography.
         // remark: composition of homographies
         const residual = speedy_vision_default().Matrix(normalizedHomography);
-        for (let k = 0; k < POSE_ITERATIONS; k++) {
+        for (let k = 0; k < POSE_REFINEMENT_ITERATIONS; k++) {
             // incrementally improve the partial pose
             const rt = this._estimatePartialPose(residual); // rt should converge to the identity matrix
             partialPose.setToSync(rt.times(partialPose));
@@ -23396,18 +24659,15 @@ class CameraModel {
             //console.log("residual",residual.toString());
         }
         //console.log('-----------');
-        // refine the translation vector
+        // read the partial pose
         const mat = partialPose.read();
-        const r = mat.slice(0, 6);
+        const r0 = mat.slice(0, 6);
         const t0 = mat.slice(6, 9);
-        const t = this._refineTranslation(normalizedHomography, r, t0);
-        const refinedPartialPose = speedy_vision_default().Matrix(3, 3, r.concat(t));
-        // filter the partial pose
-        const filteredPartialPose = this._filterPartialPose(refinedPartialPose);
-        // estimate the full pose
-        //const finalPartialPose = partialPose;
-        const finalPartialPose = filteredPartialPose;
-        return this._estimateFullPose(finalPartialPose);
+        // refine the translation vector and compute the full rotation matrix
+        const t = this._refineTranslation(normalizedHomography, r0, t0);
+        const r = this._computeFullRotation(r0);
+        // done!
+        return speedy_vision_default().Matrix(3, 4, r.concat(t));
     }
 }
 
@@ -23431,11 +24691,10 @@ class CameraModel {
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  * pose.ts
- * A pose represents a position and an orientation in a 3D space
+ * A pose represents a position and an orientation in 3D space
  */
 /**
- * A pose represents a position and an orientation in a 3D space
- * (and sometimes a scale, too...)
+ * A pose represents a position and an orientation in 3D space
  */
 class Pose {
     /**
@@ -23474,125 +24733,320 @@ class Pose {
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  * transform.ts
- * 3D geometrical transforms
+ * 3D transforms
  */
 
 
+
+
+/** Small number */
+const transform_EPSILON = 1e-6;
 /**
- * A 3D transformation
+ * A Transform represents a position, a rotation and a scale in 3D space
  */
-class BaseTransform {
+class Transform {
     /**
      * Constructor
-     * @param matrix a 4x4 matrix
+     * @param matrix a 4x4 transformation matrix. You should ensure that its form is T * R * S (translation * rotation * scale).
      */
     constructor(matrix) {
         if (matrix.rows != 4 || matrix.columns != 4)
-            throw new IllegalArgumentError('A 3D transform expects a 4x4 matrix');
+            throw new IllegalArgumentError('A Transform expects a 4x4 transformation matrix');
         this._matrix = matrix;
+        this._inverse = null;
+        this._position = Vector3.Zero();
+        this._orientation = Quaternion.Identity();
+        this._scale = new Vector3(1, 1, 1);
+        this._isDecomposed = false;
+        this._isPositionComputed = false;
+        this._right = Vector3.ZERO;
+        this._up = Vector3.ZERO;
+        this._forward = Vector3.ZERO;
     }
     /**
-     * The 4x4 transformation matrix (read-only)
+     * The 4x4 transformation matrix
+     * This matrix is not meant to be changed. Changing it will not update the
+     * previously computed components of the transform!
      */
     get matrix() {
         return this._matrix;
     }
-}
-/**
- * An invertible 3D transformation
- */
-class InvertibleTransform extends BaseTransform {
     /**
-     * Constructor
-     * @param matrix a 4x4 matrix
-     */
-    constructor(matrix) {
-        // WARNING: we do not check if the matrix actually encodes an invertible transform!
-        super(matrix);
-    }
-    /**
-     * The inverse of the transform
+     * The inverse transform
      */
     get inverse() {
-        const inverseMatrix = speedy_vision_default().Matrix(this._matrix.inverse());
-        return new InvertibleTransform(inverseMatrix);
-    }
-}
-/**
- * A 3D transformation described by translation, rotation and scale
- */
-class StandardTransform extends InvertibleTransform {
-    // TODO: position, rotation and scale attributes
-    /**
-     * Constructor
-     * @param matrix a 4x4 matrix
-     */
-    constructor(matrix) {
-        // WARNING: we do not check if the matrix actually encodes a standard transform!
-        super(matrix);
+        if (this._inverse === null)
+            this._inverse = new Transform(this._inverseMatrix());
+        return this._inverse;
     }
     /**
-     * The inverse of the transform
+     * The 3D position encoded by the transform
      */
-    get inverse() {
+    get position() {
+        if (!this._isPositionComputed)
+            this._computePosition();
+        return this._position;
+    }
+    /**
+     * A unit quaternion describing the rotational component of the transform
+     */
+    get orientation() {
+        if (!this._isDecomposed)
+            this._decompose();
+        return this._orientation;
+    }
+    /**
+     * The scale encoded by the transform
+     */
+    get scale() {
+        if (!this._isDecomposed)
+            this._decompose();
+        return this._scale;
+    }
+    /**
+     * Unit right vector of the local space
+     */
+    get right() {
+        if (this._right === Vector3.ZERO)
+            this._right = this._scaleAndRotate(new Vector3(1, 0, 0))._normalize();
+        return this._right;
+    }
+    /**
+     * Unit up vector of the local space
+     */
+    get up() {
+        if (this._up === Vector3.ZERO)
+            this._up = this._scaleAndRotate(new Vector3(0, 1, 0))._normalize();
+        return this._up;
+    }
+    /**
+     * Unit forward vector of the local space
+     */
+    get forward() {
+        if (this._forward === Vector3.ZERO) {
+            // in a right-handed system, the unit forward vector is (0, 0, -1)
+            // in a left-handed system, it is (0, 0, 1)
+            this._forward = this._scaleAndRotate(new Vector3(0, 0, -1))._normalize();
+        }
+        return this._forward;
+    }
+    /**
+     * Use this transform to scale and rotate a vector
+     * The translation component of the transform is ignored
+     * @param v a vector
+     * @returns input vector v
+     */
+    _scaleAndRotate(v) {
+        const m = this._matrix.read();
+        const h = Math.abs(m[15]) < transform_EPSILON ? Number.NaN : 1 / m[15]; // usually h = 1
+        const vx = v.x, vy = v.y, vz = v.z;
+        const x = m[0] * vx + m[4] * vy + m[8] * vz;
+        const y = m[1] * vx + m[5] * vy + m[9] * vz;
+        const z = m[2] * vx + m[6] * vy + m[10] * vz;
+        return v._set(x * h, y * h, z * h);
+    }
+    /**
+     * Decompose this transform
+     */
+    _decompose() {
         /*
 
-        The inverse of a 4x4 standard transform T * R * S...
+        The shape of a 4x4 transform T * R * S is
+
+        [  RS  t  ]
+        [  0'  1  ]
+
+        where S is a 3x3 diagonal matrix, R is a 3x3 rotation matrix, t is a
+        3x1 translation vector and 0' is a 1x3 zero vector.
+
+        How do we decompose it?
+
+        1) Decomposing the translation vector t is trivial
+
+        2) Decomposing matrices R (rotation) and S (scale) can be done by
+           noticing that (RS)'(RS) = (S'R')(RS) = S'(R'R) S = S'S is diagonal
+
+        3) Since R is a rotation matrix, we have det R = +1. This means that
+           det RS = det R * det S = det S. If det RS < 0, then we have a change
+           of handedness (i.e., a negative scale). We may flip the forward axis
+           (Z) and let the rotation matrix encode the rest of the transformation
+
+        4) Use 2) and 3) to find a suitable S
+
+        5) Compute R = (RS) * S^(-1)
+
+        */
+        const m = this._matrix.read();
+        const h = Math.abs(m[15]) < transform_EPSILON ? Number.NaN : 1 / m[15]; // usually h = 1
+        // find t
+        const tx = m[12] * h;
+        const ty = m[13] * h;
+        const tz = m[14] * h;
+        // find RS
+        const rs11 = m[0] * h;
+        const rs21 = m[1] * h;
+        const rs31 = m[2] * h;
+        const rs12 = m[4] * h;
+        const rs22 = m[5] * h;
+        const rs32 = m[6] * h;
+        const rs13 = m[8] * h;
+        const rs23 = m[9] * h;
+        const rs33 = m[10] * h;
+        // do we have a change of handedness?
+        const det = rs13 * (rs21 * rs32 - rs22 * rs31) + rs33 * (rs11 * rs22 - rs12 * rs21) - rs23 * (rs11 * rs32 - rs12 * rs31);
+        const sign = +(det >= 0) - +(det < 0);
+        // if det = 0, RS is not invertible!
+        // find S
+        const sx = Math.sqrt(rs11 * rs11 + rs12 * rs12 + rs13 * rs13);
+        const sy = Math.sqrt(rs21 * rs21 + rs22 * rs22 + rs23 * rs23);
+        const sz = Math.sqrt(rs31 * rs31 + rs32 * rs32 + rs33 * rs33) * sign;
+        // zero scale?
+        if (sx < transform_EPSILON || sy < transform_EPSILON || sz * sign < transform_EPSILON) {
+            this._position._set(tx, ty, tz);
+            this._scale._set(sx, sy, sz);
+            this._orientation._copyFrom(Quaternion.Identity());
+            this._isDecomposed = true;
+            this._isPositionComputed = true;
+            return;
+        }
+        // find S^(-1)
+        const zx = 1 / sx;
+        const zy = 1 / sy;
+        const zz = 1 / sz;
+        // find R
+        const r11 = rs11 * zx;
+        const r21 = rs21 * zx;
+        const r31 = rs31 * zx;
+        const r12 = rs12 * zy;
+        const r22 = rs22 * zy;
+        const r32 = rs32 * zy;
+        const r13 = rs13 * zz;
+        const r23 = rs23 * zz;
+        const r33 = rs33 * zz;
+        // set the components
+        this._position._set(tx, ty, tz);
+        this._scale._set(sx, sy, sz);
+        this._orientation._fromRotationMatrix(speedy_vision_default().Matrix(3, 3, [
+            r11, r21, r31,
+            r12, r22, r32,
+            r13, r23, r33
+        ]));
+        // done!
+        this._isDecomposed = true;
+        this._isPositionComputed = true;
+    }
+    /**
+     * A simpler decomposition routine.
+     * Sometimes we just need the position.
+     */
+    _computePosition() {
+        const m = this._matrix.read();
+        const h = Math.abs(m[15]) < transform_EPSILON ? Number.NaN : 1 / m[15]; // usually h = 1
+        // find t
+        this._position._set(m[12] * h, m[13] * h, m[14] * h);
+        // done!
+        this._isPositionComputed = true;
+    }
+    /**
+     * Compute the inverse matrix of this transform
+     * @returns the inverse matrix
+     */
+    _inverseMatrix() {
+        // test
+        //console.log(Speedy.Matrix(this._matrix.inverse().times(this._matrix)).toString());
+        // this works, but this inverse is straightforward
+        return speedy_vision_default().Matrix(this._matrix.inverse());
+        /*
+
+        Simple analytic method
+        ----------------------
+
+        The inverse of a 4x4 transform T * R * S
 
         [  RS  t  ]    is    [  ZR' -ZR't ]
         [  0'  1  ]          [  0'    1   ]
 
         where S is 3x3, R is 3x3, t is 3x1, 0' is 1x3 and Z is the inverse of S
 
+        R is a rotation matrix; S is a diagonal matrix
+
         */
-        return super.inverse;
-    }
-}
-/**
- * A 3D transformation described by position and orientation
- */
-class RigidTransform extends StandardTransform {
-    // TODO: position and rotation attributes (need to decompose the matrix)
-    /**
-     * Constructor
-     * @param matrix a 4x4 matrix
-     */
-    constructor(matrix) {
-        // WARNING: we do not check if the matrix actually encodes a rigid transform!
-        super(matrix);
-    }
-    /**
-     * The inverse of the transform
-     */
-    get inverse() {
         /*
+        // decompose the transform
+        if(!this._isDecomposed)
+            this._decompose();
 
-        The inverse of a 4x4 rigid transform
+        // find t
+        const tx = this._position.x;
+        const ty = this._position.y;
+        const tz = this._position.z;
 
-        [  R   t  ]    is    [  R'  -R't  ]
-        [  0'  1  ]          [  0'    1   ]
+        // find S (typically 1, but not very accurate)
+        const sx = this._scale.x;
+        const sy = this._scale.y;
+        const sz = this._scale.z;
 
-        where R is 3x3, t is 3x1 and 0' is 1x3
+        // sanity check
+        if(Math.abs(sx) < EPSILON || Math.abs(sy) < EPSILON || Math.abs(sz) < EPSILON) {
+            //throw new IllegalOperationError('Not an invertible transform: ' + this._matrix.toString());
+            return Speedy.Matrix(4, 4, new Array(16).fill(Number.NaN)); // more friendly behavior
+        }
 
-        */
-        const m = this._matrix.read();
-        if (m[15] == 0) // error? abs()??
-            throw new IllegalOperationError('Not a rigid transform');
-        const s = 1 / m[15]; // should be 1 (normalize homogeneous coordinates)
-        const r11 = m[0] * s, r12 = m[4] * s, r13 = m[8] * s;
-        const r21 = m[1] * s, r22 = m[5] * s, r23 = m[9] * s;
-        const r31 = m[2] * s, r32 = m[6] * s, r33 = m[10] * s;
-        const t1 = m[12] * s, t2 = m[13] * s, t3 = m[14] * s;
-        const rt1 = r11 * t1 + r21 * t2 + r31 * t3;
-        const rt2 = r12 * t1 + r22 * t2 + r32 * t3;
-        const rt3 = r13 * t1 + r23 * t2 + r33 * t3;
-        const inverseMatrix = speedy_vision_default().Matrix(4, 4, [
-            r11, r12, r13, 0,
-            r21, r22, r23, 0,
-            r31, r32, r33, 0,
-            -rt1, -rt2, -rt3, 1
+        // find R
+        const r = this._rotation.read();
+        const r11 = r[0];
+        const r21 = r[1];
+        const r31 = r[2];
+        const r12 = r[3];
+        const r22 = r[4];
+        const r32 = r[5];
+        const r13 = r[6];
+        const r23 = r[7];
+        const r33 = r[8];
+
+        // find Z = S^(-1)
+        const zx = 1 / sx;
+        const zy = 1 / sy;
+        const zz = 1 / sz;
+
+        // compute Z R'
+        const zr11 = zx * r11;
+        const zr21 = zy * r12;
+        const zr31 = zz * r13;
+        const zr12 = zx * r21;
+        const zr22 = zy * r22;
+        const zr32 = zz * r23;
+        const zr13 = zx * r31;
+        const zr23 = zy * r32;
+        const zr33 = zz * r33;
+
+        // compute -Z R't
+        const zrt1 = -(tx * zr11 + ty * zr12 + tz * zr13);
+        const zrt2 = -(tx * zr21 + ty * zr22 + tz * zr23);
+        const zrt3 = -(tx * zr31 + ty * zr32 + tz * zr33);
+
+        // test
+        console.log('inverse', Speedy.Matrix(Speedy.Matrix(4, 4, [
+            zr11, zr21, zr31, 0,
+            zr12, zr22, zr32, 0,
+            zr13, zr23, zr33, 0,
+            zrt1, zrt2, zrt3, 1
+        ]).times(this._matrix)).toString());
+
+        console.log('rotation', Speedy.Matrix(
+            this._rotation.transpose().times(this._rotation)
+        ).toString());
+
+        console.log('scale', this._scale);
+
+        // done!
+        return Speedy.Matrix(4, 4, [
+            zr11, zr21, zr31, 0,
+            zr12, zr22, zr32, 0,
+            zr13, zr23, zr33, 0,
+            zrt1, zrt2, zrt3, 1
         ]);
-        return new RigidTransform(inverseMatrix);
+        */
     }
 }
 
@@ -23630,58 +25084,19 @@ class ViewerPose extends Pose {
      * @param camera camera model
      */
     constructor(camera) {
-        // compute the view matrix and its inverse in AR screen space
-        const viewMatrix = ViewerPose._computeViewMatrix(camera);
-        const inverseTransform = new RigidTransform(viewMatrix);
-        super(inverseTransform.inverse);
+        const viewMatrix = camera.computeViewMatrix();
+        const modelMatrix = speedy_vision_default().Matrix(viewMatrix.inverse());
+        const transform = new Transform(modelMatrix);
+        super(transform);
         this._viewMatrix = viewMatrix;
     }
     /**
-     * This 4x4 matrix moves 3D points from world space to viewer space. We
-     * assume that the camera is looking in the direction of the negative
-     * z-axis (WebGL-friendly)
+     * This 4x4 matrix moves 3D points from world space to view space.
+     * We assume that the camera is looking in the direction of the
+     * negative z-axis (WebGL-friendly)
      */
     get viewMatrix() {
         return this._viewMatrix;
-    }
-    /**
-     * Compute the view matrix in AR screen space, measured in pixels
-     * @param camera
-     * @returns a 4x4 matrix describing a rotation and a translation
-     */
-    static _computeViewMatrix(camera) {
-        /*
-
-        // this is the view matrix in AR screen space, measured in pixels
-        // we augment the extrinsics matrix, making it 4x4 by adding a
-        // [ 0  0  0  1 ] row. Below, E is a 3x4 extrinsics matrix
-        const V = Speedy.Matrix(4, 4, [
-            E[0], E[1], E[2], 0,
-            E[3], E[4], E[5], 0,
-            E[6], E[7], E[8], 0,
-            E[9], E[10], E[11], 1
-        ]);
-
-        // we premultiply V by F, which performs a rotation around the
-        // x-axis by 180 degrees, so that we get the 3D objects in front
-        // of the camera pointing in the direction of the negative z-axis
-        const F = Speedy.Matrix(4, 4, [
-            1, 0, 0, 0,
-            0,-1, 0, 0,
-            0, 0,-1, 0,
-            0, 0, 0, 1
-        ]);
-
-        Matrix F * V is matrix V with the second and third rows negated
-
-        */
-        const E = camera.extrinsics;
-        return speedy_vision_default().Matrix(4, 4, [
-            E[0], -E[1], -E[2], 0,
-            E[3], -E[4], -E[5], 0,
-            E[6], -E[7], -E[8], 0,
-            E[9], -E[10], -E[11], 1
-        ]);
     }
 }
 
@@ -23710,11 +25125,10 @@ class ViewerPose extends Pose {
  */
 
 
-
-/** Default distance in pixels of the near plane to the optical center of the camera */
-const DEFAULT_NEAR = 1;
-/** Default distance in pixels of the far plane to the optical center of the camera */
-const DEFAULT_FAR = 20000;
+/** Default distance of the near plane to the optical center of the camera */
+const DEFAULT_NEAR = 0.1;
+/** Default distance of the far plane to the optical center of the camera */
+const DEFAULT_FAR = 10000 * DEFAULT_NEAR;
 /**
  * A PerspectiveView is a View defining a symmetric frustum around the z-axis
  * (perspective projection)
@@ -23727,16 +25141,15 @@ class PerspectiveView {
      * @param far distance of the far plane
      */
     constructor(camera, near = DEFAULT_NEAR, far = DEFAULT_FAR) {
-        const intrinsics = camera.intrinsics;
-        const screenSize = camera.screenSize;
-        this._near = Math.max(0, +near);
-        this._far = Math.max(0, +far);
+        this._near = +near;
+        this._far = +far;
         if (this._near >= this._far)
             throw new IllegalArgumentError(`View expects near < far (found near = ${this._near} and far = ${this._far})`);
-        this._aspect = screenSize.width / screenSize.height;
-        this._tanOfHalfFovx = intrinsics[U0] / intrinsics[FX];
-        this._tanOfHalfFovy = intrinsics[V0] / intrinsics[FY];
-        this._projectionMatrix = PerspectiveView._computeProjectionMatrix(intrinsics, this._near, this._far);
+        else if (this._near <= 0)
+            throw new IllegalArgumentError(`View expects a positive near (found ${this._near})`);
+        this._camera = camera;
+        this._projectionMatrix = camera.computeProjectionMatrix(this._near, this._far);
+        this._inverseProjection = null;
     }
     /**
      * A 4x4 projection matrix for WebGL
@@ -23745,22 +25158,31 @@ class PerspectiveView {
         return this._projectionMatrix;
     }
     /**
+     * The inverse of the projection matrix
+     * @internal
+     */
+    get _projectionMatrixInverse() {
+        if (this._inverseProjection === null)
+            this._inverseProjection = speedy_vision_default().Matrix(this._projectionMatrix.inverse());
+        return this._inverseProjection;
+    }
+    /**
      * Aspect ratio of the frustum
      */
     get aspect() {
-        return this._aspect;
+        return this._camera.aspectRatio;
     }
     /**
      * Horizontal field-of-view of the frustum, measured in radians
      */
     get fovx() {
-        return 2 * Math.atan(this._tanOfHalfFovx);
+        return this._camera.fovx;
     }
     /**
      * Vertical field-of-view of the frustum, measured in radians
      */
     get fovy() {
-        return 2 * Math.atan(this._tanOfHalfFovy);
+        return this._camera.fovy;
     }
     /**
      * Distance of the near plane
@@ -23774,26 +25196,54 @@ class PerspectiveView {
     get far() {
         return this._far;
     }
+}
+
+;// CONCATENATED MODULE: ./src/geometry/ray.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * ray.ts
+ * Rays
+ */
+/**
+ * A ray with origin and direction
+ */
+class Ray {
     /**
-     * Compute a perspective projection matrix for WebGL
-     * @param K camera intrinsics
-     * @param near distance of the near plane
-     * @param far distance of the far plane
+     * Constructor
+     * @param origin a point
+     * @param direction a unit vector
      */
-    static _computeProjectionMatrix(K, near, far) {
-        // we assume that the principal point is at the center of the image
-        const top = near * (K[V0] / K[FY]);
-        const right = near * (K[U0] / K[FX]);
-        const bottom = -top, left = -right; // symmetric frustum
-        // a derivation of this projection matrix can be found at
-        // https://www.songho.ca/opengl/gl_projectionmatrix.html
-        // http://learnwebgl.brown37.net/08_projections/projections_perspective.html
-        return speedy_vision_default().Matrix(4, 4, [
-            2 * near / (right - left), 0, 0, 0,
-            0, 2 * near / (top - bottom), 0, 0,
-            (right + left) / (right - left), (top + bottom) / (top - bottom), -(far + near) / (far - near), -1,
-            0, 0, -2 * far * near / (far - near), 0
-        ]);
+    constructor(origin, direction) {
+        this._origin = origin;
+        this._direction = direction;
+    }
+    /**
+     * The origin point of the ray
+     */
+    get origin() {
+        return this._origin;
+    }
+    /**
+     * The direction of the ray, a unit vector
+     */
+    get direction() {
+        return this._direction;
     }
 }
 
@@ -23819,6 +25269,8 @@ class PerspectiveView {
  * view.ts
  * A viewer represents a virtual camera in 3D world space
  */
+
+
 
 
 
@@ -23870,8 +25322,46 @@ class Viewer {
         const modelMatrix = pose.transform.matrix;
         const viewMatrix = this._pose.viewMatrix;
         const modelViewMatrix = speedy_vision_default().Matrix(viewMatrix.times(modelMatrix));
-        const transform = new StandardTransform(modelViewMatrix);
+        const transform = new Transform(modelViewMatrix);
         return new Pose(transform);
+    }
+    /**
+     * Cast a ray from a point in the image space associated with this Viewer
+     * @param position a point in image space, given in normalized units [-1,1]x[-1,1]
+     * @returns a ray in world space that corresponds to the given point
+     */
+    raycast(position) {
+        const projectionMatrixInverse = this.view._projectionMatrixInverse;
+        const viewMatrixInverse = this._pose.transform.matrix;
+        const pointInClipSpace = speedy_vision_default().Matrix(4, 1, [
+            // Normalized Device Coordinates (NDC)
+            position.x,
+            position.y,
+            0,
+            1 // homogeneous coordinates
+        ]);
+        const pointInViewSpace = projectionMatrixInverse.times(pointInClipSpace);
+        const pointInWorldSpace = viewMatrixInverse.times(pointInViewSpace);
+        const p = speedy_vision_default().Matrix(pointInWorldSpace).read();
+        /*
+
+        (*) since we're just interested in the direction, any z coordinate in
+            clip space [-1,1] will give us a suitable point p in world space.
+
+        */
+        const origin = this._pose.transform.position;
+        const direction = new Vector3(p[0] / p[3], p[1] / p[3], p[2] / p[3])
+            ._subtract(origin)._normalize();
+        return new Ray(origin, direction);
+    }
+    /**
+     * Compute a ray in the forward direction from the viewer
+     * @returns a new ray in world space
+     */
+    forwardRay() {
+        const origin = this._pose.transform.position;
+        const direction = this._pose.transform.forward;
+        return new Ray(origin, direction);
     }
 }
 
@@ -23908,12 +25398,11 @@ class Viewer {
 
 
 
+
 /** Whether or not we want to accelerate GPU-CPU transfers. Using turbo costs a slight delay on the tracking */
 const USE_TURBO = true;
 /** Number of PBOs; meaningful only when using turbo */
 const NUMBER_OF_PBOS = 2;
-/** Frame skipping; meaningful only when using turbo */
-const TURBO_SKIP = 2;
 /**
  * The tracking state of the Image Tracker tracks
  * keypoints of the image target and updates the
@@ -23929,28 +25418,26 @@ class ImageTrackerTrackingState extends ImageTrackerState {
         this._referenceImage = null;
         this._warpHomography = speedy_vision_default().Matrix.Eye(3);
         this._poseHomography = speedy_vision_default().Matrix.Eye(3);
-        this._initialHomography = speedy_vision_default().Matrix.Eye(3);
-        this._initialKeypoints = [];
-        this._counter = 0;
-        this._camera = new CameraModel();
-        this._predictedKeypoints = [];
-        this._lastPipelineOutput = { keypoints: [] };
-        this._pipelineCounter = 0;
+        this._templateKeypoints = [];
+        this._initialScreenSize = speedy_vision_default().Size(1, 1);
         this._lastOutput = {};
+        this._lastPipelineOutput = { keypoints: [] };
+        this._skipCounter = 0;
+        this._counter = 0;
         this._lostCounter = 0;
-        // we need at least 4 correspondences of points to compute a homography matrix
-        Utils.assert(TRACK_MIN_MATCHES >= 4);
+        this._camera = new CameraModel();
+        this._fixedCamera = new CameraModel();
     }
     /**
      * Called as soon as this becomes the active state, just before update() runs for the first time
      * @param settings
      */
     onEnterState(settings) {
-        const homography = settings.homography;
+        const homography = settings.homography; // NDC, from reference image to video
         const referenceImage = settings.referenceImage;
         const templateKeypoints = settings.templateKeypoints;
-        const keypointPortalSink = settings.keypointPortalSink;
-        const screenSize = settings.screenSize; // this.screenSize is not yet set
+        const templateKeypointPortalSink = settings.templateKeypointPortalSink;
+        const initialScreenSize = settings.initialScreenSize; // this.screenSize is not yet set
         const keypointPortalSource = this._pipeline.node('keypointPortalSource');
         // this shouldn't happen
         if (!referenceImage)
@@ -23959,18 +25446,19 @@ class ImageTrackerTrackingState extends ImageTrackerState {
         this._referenceImage = referenceImage;
         this._warpHomography = speedy_vision_default().Matrix(homography);
         this._poseHomography = speedy_vision_default().Matrix(homography);
-        this._initialHomography = speedy_vision_default().Matrix(homography);
-        this._initialKeypoints = templateKeypoints;
-        this._counter = 0;
-        this._predictedKeypoints = [];
-        this._lastPipelineOutput = { keypoints: [] };
-        this._pipelineCounter = 0;
+        this._templateKeypoints = templateKeypoints;
+        this._initialScreenSize = speedy_vision_default().Size(initialScreenSize.width, initialScreenSize.height);
         this._lastOutput = {};
+        this._lastPipelineOutput = { keypoints: [] };
+        this._skipCounter = 0;
+        this._counter = 0;
         this._lostCounter = 0;
         // setup portals
-        keypointPortalSource.source = keypointPortalSink;
-        // setup camera
-        this._camera.init(screenSize);
+        keypointPortalSource.source = templateKeypointPortalSink;
+        // setup the cameras
+        const aspectRatio = initialScreenSize.width / initialScreenSize.height;
+        this._camera.init(aspectRatio);
+        this._fixedCamera.init(aspectRatio);
         // emit event
         const ev = new ImageTrackerEvent('targetfound', referenceImage);
         this._imageTracker.dispatchEvent(ev);
@@ -23981,11 +25469,13 @@ class ImageTrackerTrackingState extends ImageTrackerState {
      * Called when leaving the state
      */
     onLeaveState() {
-        const referenceImage = this._referenceImage;
-        // release the camera
+        // log
+        Utils.log(`No longer tracking image "${this._referenceImage.name}"!`);
+        // release the cameras
+        this._fixedCamera.release();
         this._camera.release();
         // emit event
-        const ev = new ImageTrackerEvent('targetlost', referenceImage);
+        const ev = new ImageTrackerEvent('targetlost', this._referenceImage);
         this._imageTracker.dispatchEvent(ev);
     }
     /**
@@ -23995,7 +25485,7 @@ class ImageTrackerTrackingState extends ImageTrackerState {
     _beforeUpdate() {
         const imageRectifier = this._pipeline.node('imageRectifier');
         const borderClipper = this._pipeline.node('borderClipper');
-        const keypointRectifier = this._pipeline.node('keypointRectifier');
+        const keypointScaler = this._pipeline.node('keypointScaler');
         const screenSize = this.screenSize;
         /*
         // pause media (test)
@@ -24006,37 +25496,38 @@ class ImageTrackerTrackingState extends ImageTrackerState {
         // clip keypoints from the borders of the target image
         borderClipper.imageSize = screenSize;
         borderClipper.borderSize = speedy_vision_default().Vector2(screenSize.width * TRACK_CLIPPING_BORDER, screenSize.height * TRACK_CLIPPING_BORDER);
+        // convert keypoints to NIS
+        keypointScaler.transform = ImageTrackerUtils.rasterToNIS(screenSize);
         // rectify the image
-        return this._findImageWarp(this._warpHomography, screenSize).then(warp => {
-            imageRectifier.transform = warp;
-        });
+        const scale = TRACK_RECTIFIED_SCALE;
+        const aspectRatio = ImageTrackerUtils.bestFitAspectRatioNDC(screenSize, this._referenceImage);
+        const shrink = ImageTrackerUtils.bestFitScaleNDC(aspectRatio, scale);
+        const undistort = this._warpHomography.inverse();
+        const toScreen = ImageTrackerUtils.NDCToRaster(screenSize);
+        const toNDC = ImageTrackerUtils.rasterToNDC(screenSize);
+        return imageRectifier.transform.setTo(toScreen.times(shrink.times(undistort)).times(toNDC)).then(() => void 0);
     }
     /**
      * GPU processing
      * @returns promise with the pipeline results
      */
     _gpuUpdate() {
-        //return super._gpuUpdate();
-        // No turbo?
-        if (!USE_TURBO || Settings.powerPreference == 'low-power')
+        // Run the pipeline as usual
+        if (!USE_TURBO || Settings.powerPreference == 'low-power') // || Settings.powerPreference == 'high-performance')
             return super._gpuUpdate();
         // When using turbo, we reduce the GPU usage by skipping every other frame
-        const counter = this._pipelineCounter;
-        this._pipelineCounter = (this._pipelineCounter + 1) % TURBO_SKIP;
-        // Skip frame
-        if (counter != 0) {
-            if (this._lastPipelineOutput.keypoints !== undefined) {
-                this._predictedKeypoints = this._predictKeypoints(this._lastPipelineOutput.keypoints, this._initialKeypoints);
-            }
-            else
-                this._predictedKeypoints.length = 0;
-            this._lastPipelineOutput.keypoints = this._predictedKeypoints;
+        if (0 == (this._skipCounter = 1 - this._skipCounter)) {
+            const templateKeypoints = this._templateKeypoints;
+            const previousKeypoints = this._lastPipelineOutput.keypoints;
+            //const currentKeypoints = this._predictKeypoints(previousKeypoints, templateKeypoints);
+            const currentKeypoints = previousKeypoints; // this actually works
+            this._lastPipelineOutput.keypoints = currentKeypoints;
             return speedy_vision_default().Promise.resolve(this._lastPipelineOutput);
         }
         // Run the pipeline and store the results
-        return super._gpuUpdate().then(results => {
-            this._lastPipelineOutput = results;
-            return results;
+        return super._gpuUpdate().then(result => {
+            this._lastPipelineOutput = result;
+            return result;
         });
     }
     /**
@@ -24045,98 +25536,93 @@ class ImageTrackerTrackingState extends ImageTrackerState {
      * @returns state output
      */
     _afterUpdate(result) {
-        const imageRectifier = this._pipeline.node('imageRectifier');
         const keypoints = result.keypoints;
         const image = result.image;
         const referenceImage = this._referenceImage;
-        // find the best keypoint matches
-        return this._preprocessMatches(keypoints, this._initialKeypoints).then(matches => {
+        const screenSize = this.screenSize;
+        // track the target
+        return speedy_vision_default().Promise.resolve()
+            .then(() => {
+            // if a change in screen size occurs, we need to recalibrate
+            // (perform a new pre-training)
+            if (!screenSize.equals(this._initialScreenSize))
+                throw new TrackingError('Detected a change in screen size');
+            // find matching pairs of keypoints
+            const allPairs = this._findMatchingPairs(this._templateKeypoints, keypoints);
+            const pairs = ImageTrackerUtils.refineMatchingPairs(allPairs);
+            if (pairs.length < TRACK_MIN_MATCHES)
+                throw new TrackingError('Not enough data points to continue the tracking');
             // find motion models
+            const points = ImageTrackerUtils.compilePairsOfKeypointsNDC(pairs);
             return speedy_vision_default().Promise.all([
-                this._findAffineMotion(matches),
-                this._findPerspectiveMotion(matches)
+                this._findAffineMotionNDC(points),
+                this._findPerspectiveMotionNDC(points)
             ]);
-        }).then(([affineMotion, perspectiveMotion]) => {
+        })
+            .then(([affineMotion, perspectiveMotion]) => {
             const lowPower = (Settings.powerPreference == 'low-power');
-            const frozen = !(!USE_TURBO || lowPower || this._counter % TURBO_SKIP == 0);
+            const delay = NUMBER_OF_PBOS * (!lowPower ? 2 : 1);
             // update warp homography
-            const delay = NUMBER_OF_PBOS * (!lowPower ? TURBO_SKIP : 1);
-            const remainder = delay >>> 1; // we want remainder > 0, so it skips the first frame
-            if (!USE_TURBO || this._counter % delay == remainder)
-                this._warpHomography.setToSync(this._warpHomography.times(affineMotion));
+            if (!USE_TURBO || this._counter % delay == 1) // skip the first frame (PBOs)
+                this._warpHomography.setToSync(affineMotion.times(this._warpHomography));
             // update pose homography
-            if (!frozen)
-                this._poseHomography.setToSync(this._warpHomography.times(perspectiveMotion));
+            this._poseHomography.setToSync(perspectiveMotion.times(this._warpHomography));
+            if (Number.isNaN(this._poseHomography.at(0, 0)))
+                throw new NumericalError('Bad homography'); // normalize? 1 / h33
             // update counter
             this._counter = (this._counter + 1) % delay;
-            // update the camera
-            if (!frozen)
-                return this._camera.update(this._poseHomography, this.screenSize);
-            else
-                return this._camera.matrix;
-        }).then(_ => {
-            // find the inverse of the rectification matrix
-            const rectificationMatrix = imageRectifier.transform;
-            const inverseRectificationMatrix = speedy_vision_default().Matrix(rectificationMatrix.inverse());
-            // move keypoints from rectified space back to image space
-            const n = keypoints.length;
-            const coords = new Array(2 * n);
-            for (let i = 0, j = 0; i < n; i++, j += 2) {
-                coords[j] = keypoints[i].position.x;
-                coords[j + 1] = keypoints[i].position.y;
-            }
-            return speedy_vision_default().Matrix.applyPerspectiveTransform(speedy_vision_default().Matrix.Zeros(2, n), speedy_vision_default().Matrix(2, n, coords), inverseRectificationMatrix);
             /*
-            // test image center
-            const coords2: number[] = new Array(2 * n);
-            for(let i = 0, j = 0; i < n; i++, j += 2) {
-                coords2[j] = this._imageTracker.screenSize.width / 2;
-                coords2[j+1] = this._imageTracker.screenSize.height / 2;
-                if(i % 2 == 0) {
-                    coords2[j] = this._imageTracker.screenSize.width / 4;
-                    coords2[j+1] = this._imageTracker.screenSize.height / 4;
-                }
-            }
-
-            return Speedy.Matrix.applyPerspectiveTransform(
-                Speedy.Matrix.Zeros(2, n),
-                Speedy.Matrix(2, n, coords2),
-                this._poseHomography
-                //this._warpHomography
-            );
+            // test
+            console.log("POSE ", this._poseHomography.toString());
+            console.log("WARP ", this._warpHomography.toString());
+            console.log("AMOT ", Speedy.Matrix(affineMotion).toString());
+            console.log("PMOT ", Speedy.Matrix(perspectiveMotion).toString());
             */
-        }).then(mat => {
+            // We transform the keypoints of the reference image to NDC as a
+            // convenience. However, doing so distorts the aspect ratio. Here
+            // we undo the distortion.
+            //const scale = ImageTrackerUtils.inverseBestFitScaleNDC(referenceImage.aspectRatio); // not preferred; extrapolates the bounds of NDC
+            const scale = ImageTrackerUtils.bestFitScaleNDC(1 / referenceImage.aspectRatio); // preferred
+            const homography = speedy_vision_default().Matrix(this._poseHomography.times(scale));
+            //this._poseHomography = homography; // visualize the polyline becoming a square
+            // update camera model
+            return this._camera.update(homography);
+        })
+            .then(() => {
             /*
 
-            const n = keypoints.length;
-            const coords = mat.read();
+            Q: should the camera move relative to the target image, or should
+               the target image move relative to the camera?
 
-            // ** this will interfere with the calculations when frame skipping is on **
+            A: the target image should move and the camera should stay fixed.
+               Movements of the target image in the video should not affect the
+               rendering of all virtual elements in world space. They should
+               only affect the rendering of virtual elements positioned at the
+               local space linked to the target ("ar.root").
 
-            // get keypoints in image space
-            for(let i = 0, j = 0; i < n; i++, j += 2) {
-                keypoints[i].position.x = coords[j];
-                keypoints[i].position.y = coords[j+1];
-            }
+               (that's right, and movements of the real camera in physical space
+               shouldn't affect the world space either. Note: the real camera is
+               expected to be shaky. Example: a user holding a mobile phone.)
 
             */
-            // find a polyline surrounding the target
-            return this._findPolyline(this._poseHomography, this.screenSize);
-            //return this._findPolyline(this._warpHomography, this.screenSize);
-        }).then(polyline => {
-            // we let the target object be at the origin of the world space
-            // (identity transform). We also perform a change of coordinates,
-            // so that we move out from pixel space and into normalized space
-            const modelMatrix = this._camera.denormalizer(); // ~ "identity matrix"
-            const transform = new StandardTransform(modelMatrix);
+            // the target moves and the camera stays fixed at the origin
+            const modelMatrix = this._camera.computeViewMatrix(); // p_view = V M p_model
+            const transform = new Transform(modelMatrix);
             const pose = new Pose(transform);
-            // given the current state of the camera model, we get a viewer
-            // compatible with the pose of the target
+            const viewer = new Viewer(this._fixedCamera); // view matrix = I
+            /*
+            // this is the opposite reasoning: the camera moves and the target
+            // image stays fixed at the origin of world space
+            const modelMatrix = Speedy.Matrix.Eye(4);
+            const transform = new Transform(modelMatrix);
+            const pose = new Pose(transform);
             const viewer = new Viewer(this._camera);
+            */
             // the trackable object
             const trackable = {
                 pose: pose,
-                referenceImage: referenceImage
+                referenceImage: referenceImage,
+                tracker: this._imageTracker
             };
             // the result generated by the image tracker
             const result = {
@@ -24144,321 +25630,172 @@ class ImageTrackerTrackingState extends ImageTrackerState {
                 trackables: [trackable],
                 viewer: viewer
             };
-            // build and save the output
-            this._lastOutput = {
+            // tracker output
+            const trackerOutput = {
                 exports: result,
-                cameraMatrix: this._camera.matrix,
-                homography: this._warpHomography,
-                //keypoints: keypoints,
-                screenSize: this.screenSize,
+                keypoints: keypoints,
+                //keypointsNIS: image !== undefined ? keypoints : undefined, // debug only
                 image: image,
-                polyline: polyline,
+                polylineNDC: ImageTrackerUtils.findPolylineNDC(this._poseHomography),
+                camera: this._camera,
             };
+            // save the last output
+            this._lastOutput = trackerOutput;
             // we have successfully tracked the target in this frame
             this._lostCounter = 0;
             // done!
             return {
                 nextState: 'tracking',
-                trackerOutput: this._lastOutput
+                trackerOutput: trackerOutput
             };
-        }).catch(err => {
+        })
+            .catch(err => {
             // give some tolerance to tracking errors
             if (err instanceof TrackingError) {
                 if (++this._lostCounter <= TRACK_LOST_TOLERANCE) {
-                    //console.log("ABSORB",this._lostCounter,err.toString())
-                    // absorb the error
                     return {
                         nextState: 'tracking',
                         trackerOutput: this._lastOutput
                     };
                 }
             }
-            // lost tracking
+            // log
             Utils.warning(`The target has been lost! ${err.toString()}`);
-            this._camera.reset();
             // go back to the scanning state
             return {
                 nextState: 'scanning',
-                trackerOutput: {
-                    image: image,
-                    screenSize: this.screenSize,
-                },
+                trackerOutput: {}
             };
         });
     }
     /**
-     * Find quality matches between two sets of keypoints
-     * @param currKeypoints keypoints of the current frame
-     * @param prevKeypoints keypoints of the previous frame
-     * @returns quality matches
+     * Find an affine motion model in NDC between pairs of keypoints in NDC
+     * given as a 2 x 2n [ src | dest ] matrix
+     * @param points compiled pairs of keypoints in NDC
+     * @returns a promise that resolves to a 3x3 warp in NDC that maps source to destination
      */
-    _findQualityMatches(currKeypoints, prevKeypoints) {
-        const result = [[], []];
-        const n = currKeypoints.length;
-        for (let i = 0; i < n; i++) {
-            const currKeypoint = currKeypoints[i];
-            if (currKeypoint.matches[0].index >= 0 && currKeypoint.matches[1].index >= 0) {
-                const d1 = currKeypoint.matches[0].distance;
-                const d2 = currKeypoint.matches[1].distance;
-                if (d1 <= TRACK_MATCH_RATIO * d2) {
-                    const prevKeypoint = prevKeypoints[currKeypoint.matches[0].index];
-                    result[0].push(currKeypoint);
-                    result[1].push(prevKeypoint);
-                }
-            }
-        }
-        return result;
-    }
-    /**
-     * Find a better spatial distribution of the input matches
-     * @param matches quality matches
-     * @returns refined quality matches
-     */
-    _refineQualityMatches(matches) {
-        const currKeypoints = matches[0];
-        const prevKeypoints = matches[1];
-        // find a better spatial distribution of the keypoints
-        const indices = this._distributeKeypoints(currKeypoints, TRACK_GRID_GRANULARITY);
-        const n = indices.length; // number of refined matches
-        // assemble output
-        const result = [new Array(n), new Array(n)];
-        for (let i = 0; i < n; i++) {
-            result[0][i] = currKeypoints[indices[i]];
-            result[1][i] = prevKeypoints[indices[i]];
-        }
-        // done!
-        return result;
-    }
-    /**
-     * Spatially distribute keypoints over a grid
-     * @param keypoints keypoints to be distributed
-     * @param gridCells number of grid elements in each axis
-     * @returns a list of indices of keypoints[]
-     */
-    _distributeKeypoints(keypoints, gridCells) {
-        // get the coordinates of the keypoints
-        const n = keypoints.length;
-        const points = new Array(2 * n);
-        for (let i = 0, j = 0; i < n; i++, j += 2) {
-            points[j] = keypoints[i].x;
-            points[j + 1] = keypoints[i].y;
-        }
-        // normalize the coordinates to [0,1] x [0,1]
-        this._normalizePoints(points);
-        // distribute the keypoints over a grid
-        const numberOfCells = gridCells * gridCells;
-        const grid = (new Array(numberOfCells)).fill(-1);
-        for (let i = 0, j = 0; i < n; i++, j += 2) {
-            // find the grid location of the i-th point
-            const xg = Math.floor(points[j] * gridCells); // 0 <= xg,yg < gridCells
-            const yg = Math.floor(points[j + 1] * gridCells);
-            // store the index of the i-th point in the grid
-            grid[yg * gridCells + xg] = i;
-        }
-        // retrieve points of the grid
-        const indices = [];
-        for (let g = 0; g < numberOfCells; g++) {
-            if (grid[g] >= 0) {
-                const i = grid[g];
-                indices.push(i);
-            }
-        }
-        // done!
-        return indices;
-    }
-    /**
-     * Normalize points to [0,1)^2
-     * @param points 2 x n matrix of points in column-major format
-     * @returns points
-     */
-    _normalizePoints(points) {
-        Utils.assert(points.length % 2 == 0);
-        const n = points.length / 2;
-        if (n == 0)
-            return points;
-        let xmin = Number.POSITIVE_INFINITY, xmax = Number.NEGATIVE_INFINITY;
-        let ymin = Number.POSITIVE_INFINITY, ymax = Number.NEGATIVE_INFINITY;
-        for (let i = 0, j = 0; i < n; i++, j += 2) {
-            const x = points[j], y = points[j + 1];
-            xmin = x < xmin ? x : xmin;
-            ymin = y < ymin ? y : ymin;
-            xmax = x > xmax ? x : xmax;
-            ymax = y > ymax ? y : ymax;
-        }
-        const xlen = xmax - xmin + 1; // +1 is a correction factor, so that 0 <= x,y < 1
-        const ylen = ymax - ymin + 1;
-        for (let i = 0, j = 0; i < n; i++, j += 2) {
-            points[j] = (points[j] - xmin) / xlen;
-            points[j + 1] = (points[j + 1] - ymin) / ylen;
-        }
-        return points;
-    }
-    /**
-     * Find a matrix with the coordinates of quality matches
-     * @param matches n quality matches
-     * @returns a 2 x 2n matrix split into two 2 x n blocks [ prevKeypoints | currKeypoints ]
-     */
-    _findMatrixOfMatches(matches) {
-        const n = matches[0].length;
-        Utils.assert(n > 0);
-        // sets of keypoints
-        const currKeypoints = matches[0];
-        const prevKeypoints = matches[1];
-        // get the coordinates of the keypoints of the set of refined matches
-        const src = new Array(2 * n);
-        const dst = new Array(2 * n);
-        for (let i = 0, j = 0; i < n; i++, j += 2) {
-            src[j] = prevKeypoints[i].x;
-            src[j + 1] = prevKeypoints[i].y;
-            dst[j] = currKeypoints[i].x;
-            dst[j + 1] = currKeypoints[i].y;
-        }
-        // assemble the matrix
-        return speedy_vision_default().Matrix(2, 2 * n, src.concat(dst));
-    }
-    /**
-     * Preprocess keypoint matches
-     * @param currKeypoints keypoints of the current frame
-     * @param prevKeypoints keypoints of the previous frame
-     * @returns a promise that is rejected if there are not enough "good" matches, or that is resolved to a
-     *          2 x 2n matrix split into two 2 x n blocks [ source x,y coordinates | dest x,y coordinates ]
-     */
-    _preprocessMatches(currKeypoints, prevKeypoints) {
-        // find and refine quality matches
-        const qualityMatches = this._findQualityMatches(currKeypoints, prevKeypoints);
-        const refinedMatches = this._refineQualityMatches(qualityMatches);
-        // not enough matches?
-        const n = refinedMatches[0].length;
-        if (n < TRACK_MIN_MATCHES)
-            return speedy_vision_default().Promise.reject(new TrackingError('Not enough data to compute a motion model'));
-        // find matrix of matches
-        const matrixOfMatches = this._findMatrixOfMatches(refinedMatches);
-        // warp matrix of matches
-        const result = speedy_vision_default().Matrix.Zeros(2, 2 * n);
-        return this._findKeypointWarp().then(transform => speedy_vision_default().Matrix.applyAffineTransform(result, matrixOfMatches, transform.block(0, 1, 0, 2)));
-    }
-    /**
-     * Find an affine motion model of the target image
-     * @param preprocessedMatches 2 x 2n matrix split into two 2 x n blocks [ src | dest ]
-     * @returns a promise that resolves to a 3x3 affine motion model (last row is [ 0  0  1 ])
-     */
-    _findAffineMotion(preprocessedMatches) {
-        const model = speedy_vision_default().Matrix.Eye(3);
-        const n = preprocessedMatches.columns / 2; // number of preprocessed matches
-        // find motion model
-        return speedy_vision_default().Matrix.findAffineTransform(model.block(0, 1, 0, 2), preprocessedMatches.block(0, 1, 0, n - 1), preprocessedMatches.block(0, 1, n, 2 * n - 1), {
-            method: 'pransac',
-            reprojectionError: TRACK_RANSAC_REPROJECTIONERROR,
-            numberOfHypotheses: 512,
-            bundleSize: 128,
-        }).then(_ => {
-            // validate the model
-            const a00 = model.at(0, 0);
-            if (Number.isNaN(a00))
-                throw new TrackingError(`Can't compute affine motion model: bad keypoints`);
-            // done!
-            return model;
-        });
-    }
-    /**
-     * Find a perspective motion model of the target image
-     * @param preprocessedMatches 2 x 2n matrix split into two 2 x n blocks [ src | dest ]
-     * @returns a promise that resolves to a 3x3 perspective motion model
-     */
-    _findPerspectiveMotion(preprocessedMatches) {
+    _findAffineMotionNDC(points) {
         /*
 
         We can probably get more accurate motion estimates if we
-        work in 3D rather than in 2D. We're currently estimating
-        an affine transform in image space. What if we projected
-        the keypoints into world space, estimated the camera motion
-        (rotation and translation) that best describes the observed
-        observed motion of the keypoints, and then projected things
-        back to image space? Need to figure this out; we'll get a
-        homography matrix.
-
-        Note: keypoints are in rectified image space.
+        work in 3D rather than in 2D. We're currently estimating an
+        affine motion in 2D NDC space, which does not account for
+        perspective distortions. What if we projected the keypoints
+        into 3D NDC space, estimated the camera motion (rotation and
+        translation) that best describes the observed observed motion
+        of the keypoints, and then projected things back to 2D NDC
+        space? Need to figure this out; we'll get a homography matrix.
 
         Note: work with a 6 DoF perspective transform instead of 8.
 
         */
-        const model = speedy_vision_default().Matrix.Zeros(3);
-        const n = preprocessedMatches.columns / 2; // number of preprocessed matches
-        // find motion model
-        return speedy_vision_default().Matrix.findHomography(model, preprocessedMatches.block(0, 1, 0, n - 1), preprocessedMatches.block(0, 1, n, 2 * n - 1), {
+        return ImageTrackerUtils.findAffineWarpNDC(points, {
             method: 'pransac',
-            reprojectionError: TRACK_RANSAC_REPROJECTIONERROR,
+            reprojectionError: TRACK_RANSAC_REPROJECTIONERROR_NDC,
             numberOfHypotheses: 512 * 2,
-            bundleSize: 128 * 4, //*4
-        }).then(_ => {
-            // validate the model
-            const a00 = model.at(0, 0);
-            if (Number.isNaN(a00))
-                throw new TrackingError(`Can't compute perspective motion model: bad keypoints`);
-            // done!
-            return model;
+            bundleSize: 128,
+            mask: undefined // score is not needed
+        }).then(([warp, score]) => {
+            const scale = TRACK_RECTIFIED_SCALE;
+            const aspectRatio = ImageTrackerUtils.bestFitAspectRatioNDC(this.screenSize, this._referenceImage);
+            const shrink = ImageTrackerUtils.bestFitScaleNDC(aspectRatio, scale);
+            const grow = ImageTrackerUtils.inverseBestFitScaleNDC(aspectRatio, scale);
+            const scaledWarp = grow.times(warp).times(shrink);
+            const distort = this._warpHomography;
+            const undistort = distort.inverse();
+            const correctedWarp = distort.times(scaledWarp).times(undistort);
+            return correctedWarp;
+        }).catch(err => {
+            throw new TrackingError(`Can't find an affine motion`, err);
         });
     }
     /**
-     * Find a rectification matrix to be applied to the target image
-     * @param homography maps a reference image to the AR screen
-     * @param media target
-     * @param screenSize AR screen
-     * @returns promise that resolves to a rectification matrix
+     * Find a perspective motion model in NDC between pairs of keypoints in NDC
+     * given as a 2 x 2n [ src | dest ] matrix
+     * @param points compiled pairs of keypoints in NDC
+     * @returns a promise that resolves to a 3x3 warp in NDC that maps source to destination
      */
-    _findImageWarp(homography, screenSize) {
-        const referenceImage = this._referenceImage;
-        const media = this._imageTracker.database._findMedia(referenceImage.name);
-        const mat = speedy_vision_default().Matrix.Zeros(3);
-        return this._findRectificationMatrixOfFullscreenImage(media, screenSize).then(warp => mat.setTo(warp.times(homography.inverse())));
+    _findPerspectiveMotionNDC(points) {
+        return ImageTrackerUtils.findPerspectiveWarpNDC(points, {
+            method: 'pransac',
+            reprojectionError: TRACK_RANSAC_REPROJECTIONERROR_NDC,
+            numberOfHypotheses: 512 * 2,
+            bundleSize: 128,
+            mask: undefined // score is not needed
+        }).then(([warp, score]) => {
+            const scale = TRACK_RECTIFIED_SCALE;
+            const aspectRatio = ImageTrackerUtils.bestFitAspectRatioNDC(this.screenSize, this._referenceImage);
+            const shrink = ImageTrackerUtils.bestFitScaleNDC(aspectRatio, scale);
+            const grow = ImageTrackerUtils.inverseBestFitScaleNDC(aspectRatio, scale);
+            const scaledWarp = grow.times(warp).times(shrink);
+            const distort = this._poseHomography;
+            const undistort = distort.inverse();
+            const correctedWarp = distort.times(scaledWarp).times(undistort);
+            return correctedWarp;
+        }).catch(err => {
+            throw new TrackingError(`Can't find a perspective motion`, err);
+        });
     }
     /**
-     * Find a warp to be applied to the keypoints
-     * @returns affine transform
+     * Find matching pairs of two sets of keypoints matched via brute force
+     * @param srcKeypoints source (database)
+     * @param destKeypoints destination
+     * @returns an array of matching pairs [src, dest]
      */
-    _findKeypointWarp() {
-        const referenceImage = this._referenceImage;
-        const media = this._imageTracker.database._findMedia(referenceImage.name);
-        const screenSize = this.screenSize;
-        const sw = screenSize.width, sh = screenSize.height;
-        const mat = speedy_vision_default().Matrix.Eye(3, 3);
-        // no rotation is needed
-        if (!this._mustRotateWarpedImage(media, screenSize))
-            return speedy_vision_default().Promise.resolve(mat);
-        // rotate by 90 degrees clockwise and scale
-        return speedy_vision_default().Matrix.affine(mat.block(0, 1, 0, 2), speedy_vision_default().Matrix(2, 3, [0, sh, 0, 0, sw, 0]), speedy_vision_default().Matrix(2, 3, [0, 0, sw, 0, sw, sh])).then(_ => mat);
+    _findMatchingPairs(srcKeypoints, destKeypoints) {
+        const pairs = [];
+        for (let i = 0; i < destKeypoints.length; i++) {
+            const destKeypoint = destKeypoints[i];
+            if (destKeypoint.matches[0].index >= 0 && destKeypoint.matches[1].index >= 0) {
+                const d1 = destKeypoint.matches[0].distance;
+                const d2 = destKeypoint.matches[1].distance;
+                // the best match should be "much better" than the second best match,
+                // which means that they are "distinct enough"
+                if (d1 <= TRACK_MATCH_RATIO * d2) {
+                    const srcKeypoint = srcKeypoints[destKeypoint.matches[0].index];
+                    pairs.push([srcKeypoint, destKeypoint]);
+                }
+            }
+        }
+        return pairs;
     }
     /**
      * Predict the keypoints without actually looking at the image
      * @param curr keypoints at time t (will modify the contents)
-     * @param initial keypoints at time t-1 (not just t = 0)
+     * @param prev keypoints at time t-1 (not just t = 0)
      * @returns keypoints at time t+1
      */
-    _predictKeypoints(curr, initial) {
+    /*
+    private _predictKeypoints(curr: SpeedyMatchedKeypoint[], prev: SpeedyKeypoint[]): SpeedyMatchedKeypoint[]
+    {
         // the target image is likely to be moving roughly in
         // the same manner as it was in the previous frame
-        const next = [];
+        const alpha = 0.8; //0.2;
+        const next: SpeedyMatchedKeypoint[] = [];
         const n = curr.length;
-        for (let i = 0; i < n; i++) {
+
+        for(let i = 0; i < n; i++) {
             const cur = curr[i];
-            if (cur.matches[0].index < 0 || cur.matches[1].index < 0)
+
+            if(cur.matches[0].index < 0 || cur.matches[1].index < 0)
                 continue;
-            /*
-            else if(cur.matches[0].distance > TRACK_MATCH_RATIO * cur.matches[1].distance)
-                continue;
-            */
-            const ini = initial[cur.matches[0].index];
-            const dx = cur.position.x - ini.position.x;
-            const dy = cur.position.y - ini.position.y;
+            //else if(cur.matches[0].distance > TRACK_MATCH_RATIO * cur.matches[1].distance)
+            //    continue;
+
+            const prv = prev[cur.matches[0].index];
+            const dx = cur.position.x - prv.position.x;
+            const dy = cur.position.y - prv.position.y;
+
             // a better mathematical model is needed
-            const alpha = 0.8; //0.2;
-            cur.position.x = ini.position.x + alpha * dx;
-            cur.position.y = ini.position.y + alpha * dy;
+            cur.position.x = prv.position.x + alpha * dx;
+            cur.position.y = prv.position.y + alpha * dy;
             next.push(cur);
         }
+
         // done!
         return next;
     }
+    */
     /**
      * Create & setup the pipeline
      * @returns pipeline
@@ -24479,10 +25816,10 @@ class ImageTrackerTrackingState extends ImageTrackerState {
         const denoiser = speedy_vision_default().Filter.GaussianBlur();
         const borderClipper = speedy_vision_default().Keypoint.BorderClipper('borderClipper');
         const clipper = speedy_vision_default().Keypoint.Clipper();
-        const keypointRectifier = speedy_vision_default().Keypoint.Transformer('keypointRectifier');
+        const keypointScaler = speedy_vision_default().Keypoint.Transformer('keypointScaler');
         const keypointPortalSource = speedy_vision_default().Keypoint.Portal.Source('keypointPortalSource');
         const keypointSink = speedy_vision_default().Keypoint.SinkOfMatchedKeypoints('keypoints');
-        const imageSink = speedy_vision_default().Image.Sink('image');
+        //const imageSink = Speedy.Image.Sink('image');
         source.media = null;
         screen.size = speedy_vision_default().Size(0, 0);
         imageRectifier.transform = speedy_vision_default().Matrix.Eye(3);
@@ -24501,7 +25838,7 @@ class ImageTrackerTrackingState extends ImageTrackerState {
         clipper.size = TRACK_MAX_KEYPOINTS;
         borderClipper.imageSize = screen.size;
         borderClipper.borderSize = speedy_vision_default().Vector2(0, 0);
-        keypointRectifier.transform = speedy_vision_default().Matrix.Eye(3);
+        keypointScaler.transform = speedy_vision_default().Matrix.Eye(3);
         matcher.k = 2;
         keypointPortalSource.source = null;
         keypointSink.turbo = USE_TURBO;
@@ -24529,13 +25866,12 @@ class ImageTrackerTrackingState extends ImageTrackerState {
         keypointPortalSource.output().connectTo(matcher.input('database'));
         descriptor.output().connectTo(matcher.input('keypoints'));
         // prepare output
-        descriptor.output().connectTo(keypointRectifier.input());
-        //preMatcher.output().connectTo(keypointRectifier.input());
-        keypointRectifier.output().connectTo(keypointSink.input());
+        descriptor.output().connectTo(keypointScaler.input());
+        keypointScaler.output().connectTo(keypointSink.input());
         matcher.output().connectTo(keypointSink.input('matches'));
         //imageRectifier.output().connectTo(imageSink.input());
         // done!
-        pipeline.init(source, screen, greyscale, imageRectifier, nightvision, nightvisionMux, blur, detector, subpixel, borderClipper, clipper, denoiser, descriptor, matcher, keypointPortalSource, keypointRectifier, keypointSink);
+        pipeline.init(source, screen, greyscale, imageRectifier, nightvision, nightvisionMux, blur, detector, subpixel, borderClipper, clipper, denoiser, descriptor, matcher, keypointPortalSource, keypointScaler, keypointSink);
         return pipeline;
     }
 }
@@ -24573,32 +25909,38 @@ class ImageTrackerTrackingState extends ImageTrackerState {
 
 
 
-/** A helper */
-const formatSize = (size) => `${size.width}x${size.height}`;
+/** Default options for instantiating an ImageTracker */
+const image_tracker_DEFAULT_OPTIONS = {
+    resolution: 'sm'
+};
 /**
  * The ImageTracker tracks an image (one at a time)
  */
 class ImageTracker extends AREventTarget {
     /**
      * Constructor
+     * @param options
      */
-    constructor() {
+    constructor(options) {
         super();
         // the states
         this._state = {
             'initial': new ImageTrackerInitialState(this),
             'training': new ImageTrackerTrainingState(this),
             'scanning': new ImageTrackerScanningState(this),
-            'pre-tracking': new ImageTrackerPreTrackingState(this),
+            'pre-tracking-a': new ImageTrackerPreTrackingAState(this),
+            'pre-tracking-b': new ImageTrackerPreTrackingBState(this),
             'tracking': new ImageTrackerTrackingState(this),
         };
         // initial setup
         this._session = null;
+        this._source = null;
         this._activeStateName = 'initial';
         this._lastOutput = {};
         this._database = new ReferenceImageDatabase();
         // user settings
-        this._resolution = DEFAULT_TRACKING_RESOLUTION;
+        options = Object.assign({}, image_tracker_DEFAULT_OPTIONS, options);
+        this._resolution = options.resolution;
     }
     /**
      * The type of the tracker
@@ -24620,16 +25962,18 @@ class ImageTracker extends AREventTarget {
         return this._database;
     }
     /**
-     * Resolution of the AR screen space
+     * Resolution of the tracker
      */
     get resolution() {
         return this._resolution;
     }
     /**
-     * Resolution of the AR screen space
+     * Resolution of the tracker
+     * @readonly
      */
     set resolution(resolution) {
-        this._resolution = resolution;
+        // this property is readonly, but this setter has been kept because
+        // it wasn't readonly in previous versions of the engine. FIXME
     }
     /**
      * Size of the AR screen space, in pixels
@@ -24650,7 +25994,8 @@ class ImageTracker extends AREventTarget {
      * @internal
      */
     get _stats() {
-        return `${formatSize(this.screenSize)} ${this.state}`;
+        const screenSize = this.screenSize;
+        return `${screenSize.width}x${screenSize.height} ${this.state}`;
     }
     /**
      * Initialize this tracker
@@ -24661,6 +26006,19 @@ class ImageTracker extends AREventTarget {
     _init(session) {
         // store the session
         this._session = session;
+        // find a suitable source of data
+        // XXX also let the user specify a source manually?
+        for (const source of session.sources) {
+            // prefer video sources
+            if (source._type == 'video') {
+                this._source = source;
+                break;
+            }
+            else if (source._type == 'canvas')
+                this._source = source;
+        }
+        if (this._source === null)
+            throw new IllegalOperationError('The image tracker requires a suitable source of data');
         // initialize states
         for (const state of Object.values(this._state))
             state.init();
@@ -24692,9 +26050,8 @@ class ImageTracker extends AREventTarget {
             return speedy_vision_default().Promise.reject(new IllegalOperationError(`Uninitialized tracker`));
         // compute the screen size for image processing purposes
         // note: this may change over time...!
-        const media = this._session.media;
-        const aspectRatio = media.width / media.height;
-        const screenSize = Utils.resolution(this._resolution, aspectRatio);
+        const media = this._source._internalMedia;
+        const screenSize = this._computeScreenSize();
         // run the active state
         const activeState = this._state[this._activeStateName];
         return activeState.update(media, screenSize).then(({ trackerOutput, nextState, nextStateSettings }) => {
@@ -24738,6 +26095,670 @@ class ImageTracker extends AREventTarget {
         const training = this._state.training;
         return training.referenceKeypoint(keypointIndex);
     }
+    /**
+     * Compute the current size of the AR screen space
+     * Note that this may change over time
+     * @returns size
+     */
+    _computeScreenSize() {
+        const media = this._source._internalMedia;
+        const aspectRatio = media.width / media.height;
+        const screenSize = Utils.resolution(this._resolution, aspectRatio);
+        return screenSize;
+    }
+}
+
+;// CONCATENATED MODULE: ./src/geometry/vector2.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * vector2.ts
+ * 2D vectors
+ */
+/** Small number */
+const vector2_EPSILON = 1e-6;
+/** Immutable zero vector */
+let vector2_ZERO = null;
+// public / non-internal methods do not change the contents of the vector
+/**
+ * A vector in 2D space
+ */
+class Vector2 {
+    /**
+     * Constructor
+     */
+    constructor(x = 0, y = 0) {
+        this._x = +x;
+        this._y = +y;
+    }
+    /**
+     * Instantiate a zero vector
+     * @returns a new zero vector
+     */
+    static Zero() {
+        return new Vector2(0, 0);
+    }
+    /**
+     * Immutable zero vector
+     * @returns an immutable zero vector
+     */
+    static get ZERO() {
+        return vector2_ZERO || (vector2_ZERO = Object.freeze(Vector2.Zero()));
+    }
+    /**
+     * The x coordinate of the vector
+     */
+    get x() {
+        return this._x;
+    }
+    /**
+     * The y coordinate of the vector
+     */
+    get y() {
+        return this._y;
+    }
+    /**
+     * The length of this vector
+     * @returns sqrt(x^2 + y^2)
+     */
+    length() {
+        const x = this._x;
+        const y = this._y;
+        return Math.sqrt(x * x + y * y);
+    }
+    /**
+     * Compute the dot product of this and v
+     * @param v a vector
+     * @returns the dot product of the vectors
+     */
+    dot(v) {
+        return this._x * v._x + this._y * v._y;
+    }
+    /**
+     * Compute the distance between points this and v
+     * @param v a vector / point
+     * @returns the distance between the points
+     */
+    distanceTo(v) {
+        const dx = this._x - v._x;
+        const dy = this._y - v._y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    /**
+     * Compute the direction from this to v
+     * @param v a vector
+     * @returns a new unit vector pointing to v from this
+     */
+    directionTo(v) {
+        return v._clone()._subtract(this)._normalize();
+    }
+    /**
+     * Compute a unit vector with the same direction as this
+     * @returns a new unit vector with the same direction as this
+     */
+    normalized() {
+        return this._clone()._normalize();
+    }
+    /**
+     * Compute the sum between this vector and v
+     * @param v a vector
+     * @returns a new vector equal to the sum between this and v
+     */
+    plus(v) {
+        return this._clone()._add(v);
+    }
+    /**
+     * Compute the difference between this vector and v
+     * @param v a vector
+     * @returns a new vector equal to the difference this - v
+     */
+    minus(v) {
+        return this._clone()._subtract(v);
+    }
+    /**
+     * Compute the multiplication between this vector and a scale factor
+     * @param scale scalar quantity
+     * @returns a new vector equal to the multiplication between this and the scale factor
+     */
+    times(scale) {
+        return this._clone()._scale(scale);
+    }
+    /**
+     * Check if this and v have the same coordinates
+     * @param v a vector
+     * @returns true if this and v have the same coordinates
+     */
+    equals(v) {
+        return this._x === v._x && this._y === v._y;
+    }
+    /**
+     * Convert to string
+     * @returns a string
+     */
+    toString() {
+        const x = this._x.toFixed(5);
+        const y = this._y.toFixed(5);
+        return `Vector2(${x},${y})`;
+    }
+    /**
+     * Set the coordinates of this vector
+     * @param x x-coordinate
+     * @param y y-coordinate
+     * @returns this vector
+     * @internal
+     */
+    _set(x, y) {
+        this._x = +x;
+        this._y = +y;
+        return this;
+    }
+    /**
+     * Copy v to this vector
+     * @param v a vector
+     * @returns this vector
+     * @internal
+     */
+    _copyFrom(v) {
+        this._x = v._x;
+        this._y = v._y;
+        return this;
+    }
+    /**
+     * Normalize this vector
+     * @returns this vector, normalized
+     * @internal
+     */
+    _normalize() {
+        const length = this.length();
+        if (length < vector2_EPSILON) // zero?
+            return this;
+        this._x /= length;
+        this._y /= length;
+        return this;
+    }
+    /**
+     * Add v to this vector
+     * @param v a vector
+     * @returns this vector
+     * @internal
+     */
+    _add(v) {
+        this._x += v._x;
+        this._y += v._y;
+        return this;
+    }
+    /**
+     * Subtract v from this vector
+     * @param v a vector
+     * @returns this vector
+     * @internal
+     */
+    _subtract(v) {
+        this._x -= v._x;
+        this._y -= v._y;
+        return this;
+    }
+    /**
+     * Scale this vector by a scalar
+     * @param s scalar
+     * @returns this vector
+     * @internal
+     */
+    _scale(s) {
+        this._x *= s;
+        this._y *= s;
+        return this;
+    }
+    /**
+     * Clone this vector
+     * @returns a clone of this vector
+     * @internal
+     */
+    _clone() {
+        return new Vector2(this._x, this._y);
+    }
+}
+
+;// CONCATENATED MODULE: ./src/trackers/pointer-tracker/pointer-tracker.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * pointer-tracker.ts
+ * Tracker of pointer-based input
+ */
+
+
+
+
+/** Convert event type to trackable pointer phase */
+const EVENTTYPE2PHASE = {
+    'pointerdown': 'began',
+    'pointerup': 'ended',
+    'pointermove': 'moved',
+    'pointercancel': 'canceled',
+    'pointerleave': 'ended',
+    'pointerenter': 'began',
+};
+/** Default options for instantiating a PointerTracker */
+const pointer_tracker_DEFAULT_OPTIONS = {
+    space: 'normalized'
+};
+/**
+ * A tracker of pointer-based input such as mouse, touch or pen
+ */
+class PointerTracker {
+    /**
+     * Constructor
+     * @param options
+     */
+    constructor(options) {
+        const settings = this._buildSettings(options);
+        this._source = null;
+        this._viewport = null;
+        this._space = settings.space;
+        this._activePointers = new Map();
+        this._newPointers = new Map();
+        this._idMap = new Map();
+        this._nextId = 1;
+        this._previousOutput = this._generateOutput();
+        this._previousUpdateTime = Number.POSITIVE_INFINITY;
+        this._wantToReset = false;
+        this._resetInTheNextUpdate = this._resetInTheNextUpdate.bind(this);
+    }
+    /**
+     * Build a full and validated options object
+     * @param options
+     * @returns validated options with defaults
+     */
+    _buildSettings(options) {
+        const settings = Object.assign({}, pointer_tracker_DEFAULT_OPTIONS, options);
+        if (settings.space != 'normalized' && settings.space != 'adjusted')
+            throw new IllegalArgumentError(`Invalid pointer space: "${settings.space}"`);
+        return settings;
+    }
+    /**
+     * The type of the tracker
+     */
+    get type() {
+        return 'pointer-tracker';
+    }
+    /**
+     * Initialize the tracker
+     * @param session
+     * @returns a promise that is resolved as soon as the tracker is initialized
+     * @internal
+     */
+    _init(session) {
+        Utils.log('Initializing PointerTracker...');
+        // set the viewport
+        this._viewport = session.viewport;
+        // find the pointer source
+        for (const source of session.sources) {
+            if (source._type == 'pointer-source') {
+                this._source = source;
+                break;
+            }
+        }
+        if (this._source === null)
+            return speedy_vision_default().Promise.reject(new IllegalOperationError('A PointerTracker expects a PointerSource'));
+        // link the pointer source to the viewport
+        this._source._setViewport(this._viewport);
+        // reset trackables
+        document.addEventListener('visibilitychange', this._resetInTheNextUpdate);
+        // done!
+        return speedy_vision_default().Promise.resolve();
+    }
+    /**
+     * Release the tracker
+     * @returns a promise that is resolved as soon as the tracker is released
+     * @internal
+     */
+    _release() {
+        this._source = null;
+        this._viewport = null;
+        this._activePointers.clear();
+        this._newPointers.clear();
+        this._idMap.clear();
+        document.removeEventListener('visibilitychange', this._resetInTheNextUpdate);
+        return speedy_vision_default().Promise.resolve();
+    }
+    /**
+     * Update the tracker (update cycle)
+     * @returns a promise that is resolved as soon as the tracker is updated
+     * @internal
+     */
+    _update() {
+        const canvas = this._viewport.canvas;
+        const rect = canvas.getBoundingClientRect(); // may be different in different frames!
+        // find the time between this and the previous update of this tracker
+        const deltaTime = this._updateTime();
+        const inverseDeltaTime = (deltaTime > 1e-5) ? 1 / deltaTime : 60; // 1/dt = 1 / (1/60) with 60 fps
+        // remove inactive trackables from the previous frame (update cycle)
+        const inactiveTrackables = this._findInactiveTrackables();
+        for (let i = inactiveTrackables.length - 1; i >= 0; i--)
+            this._activePointers.delete(inactiveTrackables[i].id);
+        // make all active trackables stationary
+        this._updateAllTrackables({
+            phase: 'stationary',
+            velocity: Vector2.ZERO,
+            deltaPosition: Vector2.ZERO
+        });
+        // want to reset?
+        if (this._wantToReset) {
+            this._reset();
+            this._wantToReset = false;
+        }
+        // consume events
+        let event;
+        while ((event = this._source._consume()) !== null) {
+            // sanity check
+            if (event.target !== canvas)
+                return speedy_vision_default().Promise.reject(new IllegalOperationError('Invalid PointerEvent target ' + event.target));
+            else if (!EVENTTYPE2PHASE.hasOwnProperty(event.type))
+                return speedy_vision_default().Promise.reject(new IllegalOperationError('Invalid PointerEvent type ' + event.type));
+            // determine the ID
+            const id = this._normalizeId(event.pointerId, event.pointerType);
+            // determine the previous states, if any, of the trackable
+            const previous = this._activePointers.get(id); // state in the previous frame
+            const current = this._newPointers.get(id); // previous state in the current frame
+            // determine the phase
+            const phase = EVENTTYPE2PHASE[event.type];
+            // new trackables always begin with a pointerdown event,
+            // or with a pointerenter event having buttons pressed
+            // (example: a mousemove without a previous mousedown isn't tracked)
+            if (!(event.type == 'pointerdown' || (event.type == 'pointerenter' && event.buttons > 0))) {
+                if (!previous && !current)
+                    continue; // discard event
+            }
+            else if (previous) {
+                // discard a 'began' after another 'began'
+                continue;
+            }
+            else if (event.button != 0 && event.pointerType == 'mouse') {
+                // require left mouse click
+                continue;
+            }
+            // discard event if 'began' and 'ended' happened in the same frame
+            // (difficult to reproduce, but it can be done ;)
+            if (!previous) {
+                if (phase == 'ended' || phase == 'canceled') {
+                    this._newPointers.delete(id);
+                    continue;
+                }
+            }
+            // what if we receive 'began' after 'ended' in the same frame?
+            else if (phase == 'began' && current) {
+                if (current.phase == 'ended' || current.phase == 'canceled') {
+                    this._newPointers.delete(id);
+                    continue;
+                }
+            }
+            // discard previously canceled pointers (e.g., with a visibilitychange event)
+            if ((previous === null || previous === void 0 ? void 0 : previous.phase) == 'canceled')
+                continue;
+            // more special rules
+            switch (event.type) {
+                case 'pointermove':
+                    if (event.buttons == 0 || (current === null || current === void 0 ? void 0 : current.phase) == 'began')
+                        continue;
+                    break;
+                case 'pointerenter':
+                    if (event.buttons == 0 || (previous === null || previous === void 0 ? void 0 : previous.phase) == 'began' || (current === null || current === void 0 ? void 0 : current.phase) == 'began')
+                        continue;
+                    break;
+                case 'pointercancel': // purge everything
+                    this._reset();
+                    this._newPointers.clear();
+                    continue;
+            }
+            // determine the current position in normalized space
+            const absX = event.pageX - (rect.left + window.scrollX);
+            const absY = event.pageY - (rect.top + window.scrollY);
+            const relX = 2 * absX / rect.width - 1; // convert to [-1,1]
+            const relY = -(2 * absY / rect.height - 1); // flip Y axis
+            const position = new Vector2(relX, relY);
+            // scale the normalized space so that it matches the aspect ratio of the viewport
+            if (this._space == 'adjusted') {
+                const a = this._viewport.aspectRatio;
+                if (a >= 1) {
+                    // landscape
+                    position._set(relX, relY / a);
+                }
+                else {
+                    // portrait
+                    position._set(relX * a, relY);
+                }
+            }
+            // determine the position delta
+            const deltaPosition = !previous ? Vector2.ZERO :
+                position._clone()._subtract(previous.position);
+            // determine the initial position
+            const initialPosition = previous ? previous.initialPosition :
+                Object.freeze(position._clone());
+            // determine the velocity
+            const velocity = deltaPosition._clone()._scale(inverseDeltaTime);
+            // determine the elapsed time since the tracking began
+            const duration = previous ? previous.duration + deltaTime : 0;
+            // determine how much this pointer has moved since its tracking began
+            const movementLength = previous ? previous.movementLength + deltaPosition.length() : 0;
+            // determine the duration of the movement
+            const movementDuration = !previous ? 0 : previous.movementDuration + (movementLength > previous.movementLength ? deltaTime : 0);
+            // determine whether or not this is the primary pointer for this type
+            const isPrimary = event.isPrimary;
+            // determine the type of the originating device
+            const kind = event.pointerType;
+            // we create new trackable instances on each frame;
+            // these will be exported and consumed by the user
+            this._newPointers.set(id, {
+                id, phase,
+                position, deltaPosition, initialPosition,
+                velocity, duration,
+                movementDuration, movementLength,
+                isPrimary, kind,
+                tracker: this
+            });
+        }
+        // update trackables
+        this._newPointers.forEach((trackable, id) => this._activePointers.set(id, trackable));
+        this._newPointers.clear();
+        this._advanceAllStationaryTrackables(deltaTime);
+        // discard unused IDs
+        if (this._activePointers.size == 0 && this._idMap.size > 0)
+            this._idMap.clear();
+        // generate output
+        this._previousOutput = this._generateOutput();
+        // test
+        //console.log(JSON.stringify(this._prevOutput.exports.trackables, null, 4));
+        // done!
+        return speedy_vision_default().Promise.resolve();
+    }
+    /**
+     * Output of the previous frame
+     * @internal
+     */
+    get _output() {
+        return this._previousOutput;
+    }
+    /**
+     * Stats info
+     * @internal
+     */
+    get _stats() {
+        const n = this._activePointers.size;
+        const s = n != 1 ? 's' : '';
+        return n + ' pointer' + s;
+    }
+    /**
+     * The space in which pointers are located.
+     * You may set it when instantiating the tracker.
+     */
+    get space() {
+        return this._space;
+    }
+    /**
+     * Generate tracker output
+     * @returns a new PointerTrackerOutput object
+     */
+    _generateOutput() {
+        const trackables = [];
+        this._activePointers.forEach(trackable => trackables.push(trackable));
+        return {
+            exports: {
+                tracker: this,
+                trackables: this._sortTrackables(trackables)
+            }
+        };
+    }
+    /**
+     * Update all active pointers
+     * @param fields
+     */
+    _updateAllTrackables(fields) {
+        this._activePointers.forEach((trackable, id) => {
+            this._activePointers.set(id, Object.assign({}, trackable, fields));
+        });
+    }
+    /**
+     * Advance the elapsed time of all stationary pointers
+     * @param deltaTime
+     */
+    _advanceAllStationaryTrackables(deltaTime) {
+        this._activePointers.forEach((trackable, id) => {
+            if (trackable.phase == 'stationary') {
+                trackable.duration += deltaTime;
+                /*
+                this._activePointers.set(id, Object.assign({}, trackable, {
+                    duration: trackable.duration + deltaTime
+                }));
+                */
+            }
+        });
+    }
+    /**
+     * Normalize pointer IDs across browsers
+     * @param pointerId browser-provided pointer ID
+     * @param pointerType pointer type
+     * @returns a normalized pointer ID
+     */
+    _normalizeId(pointerId, pointerType) {
+        // XXX different hardware devices acting simultaneously may produce
+        // events with the same pointerId - handling this seems overkill?
+        if (pointerType == 'mouse')
+            return 0;
+        if (!this._idMap.has(pointerId))
+            this._idMap.set(pointerId, this._nextId++);
+        return this._idMap.get(pointerId);
+    }
+    /**
+     * Cancel all active pointers and consume all events
+     * @param deltaTime
+     */
+    _reset() {
+        // cancel all active pointers
+        this._updateAllTrackables({
+            phase: 'canceled',
+            velocity: Vector2.ZERO,
+            deltaPosition: Vector2.ZERO
+        });
+        // consume all events
+        while (this._source._consume() !== null)
+            ;
+    }
+    /**
+     * Reset in the next update of the tracker
+     */
+    _resetInTheNextUpdate() {
+        this._wantToReset = true;
+    }
+    /**
+     * As a convenience, let's make sure that a primary pointer, if any exists,
+     * is at the beginning of the trackables array
+     * @param trackables
+     * @returns sorted trackables
+     */
+    _sortTrackables(trackables) {
+        /*
+
+        Note: the browser may not report a new unique pointer (phase: "began")
+        as primary. This logic makes trackables[0] primary, or sort of primary.
+
+        Behavior on Chrome 130 on Android: when moving multiple touch points,
+        remove focus from the browser. Touch points will be canceled as
+        expected. When touching the screen again with a single finger, the
+        (only one) registered pointer will not be primary. That's undesirable.
+        Touching the screen again with multiple fingers (none will be primary),
+        and then releasing them, will restore the desired behavior.
+
+        */
+        // nothing to do
+        if (trackables.length <= 1 || trackables[0].isPrimary)
+            return trackables;
+        // find a primary pointer and swap
+        for (let j = 1; j < trackables.length; j++) {
+            if (trackables[j].isPrimary) {
+                const primary = trackables[j];
+                trackables[j] = trackables[0];
+                trackables[0] = primary;
+                break;
+            }
+        }
+        // done!
+        return trackables;
+    }
+    /**
+     * Find trackables to remove
+     * @returns a list of trackables to remove
+     */
+    _findInactiveTrackables() {
+        const trackables = [];
+        this._activePointers.forEach(trackable => {
+            if (trackable.phase == 'ended' || trackable.phase == 'canceled')
+                trackables.push(trackable);
+        });
+        return trackables;
+    }
+    /**
+     * Update the time
+     * @returns delta time in seconds
+     */
+    _updateTime() {
+        const now = performance.now() * 0.001;
+        if (this._previousUpdateTime > now)
+            this._previousUpdateTime = now;
+        const prev = this._previousUpdateTime;
+        this._previousUpdateTime = now;
+        return now - prev;
+    }
 }
 
 ;// CONCATENATED MODULE: ./src/trackers/tracker-factory.ts
@@ -24763,15 +26784,31 @@ class ImageTracker extends AREventTarget {
  * Tracker factory
  */
 
+
 /**
  * Tracker factory
  */
 class TrackerFactory {
     /**
      * Create an Image Tracker
+     * @param options
+     */
+    static Image(options = {}) {
+        return new ImageTracker(options);
+    }
+    /**
+     * Create an Image Tracker with default settings
+     * @deprecated
      */
     static ImageTracker() {
-        return new ImageTracker();
+        return this.Image();
+    }
+    /**
+     * Create a Pointer Tracker
+     * @param options
+     */
+    static Pointer(options = {}) {
+        return new PointerTracker(options);
     }
 }
 
@@ -24827,7 +26864,7 @@ class VideoSource {
      * Get media
      * @internal
      */
-    get _data() {
+    get _internalMedia() {
         if (this._media == null)
             throw new IllegalOperationError(`The media of the source of data isn't loaded`);
         return this._media;
@@ -25043,7 +27080,7 @@ class CanvasSource {
      * Get media
      * @internal
      */
-    get _data() {
+    get _internalMedia() {
         if (this._media == null)
             throw new IllegalOperationError(`The media of the source of data isn't loaded`);
         return this._media;
@@ -25121,6 +27158,7 @@ const DEFAULT_CAMERA_OPTIONS = {
 class CameraSource extends VideoSource {
     /**
      * Constructor
+     * @param options
      */
     constructor(options) {
         const video = document.createElement('video');
@@ -25198,6 +27236,158 @@ class CameraSource extends VideoSource {
     }
 }
 
+;// CONCATENATED MODULE: ./src/sources/pointer-source.ts
+/*
+ * encantar.js
+ * GPU-accelerated Augmented Reality for the web
+ * Copyright (C) 2022-2024 Alexandre Martins <alemartf(at)gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * pointer-source.ts
+ * Source of data of pointer-based input: mouse, touch, pen...
+ */
+
+
+/**
+ * Source of data of pointer-based input: mouse, touch, pen...
+ */
+class PointerSource {
+    /**
+     * Constructor
+     */
+    constructor() {
+        this._queue = [];
+        this._viewport = null;
+        this._onPointerEvent = this._onPointerEvent.bind(this);
+        this._cancelEvent = this._cancelEvent.bind(this);
+    }
+    /**
+     * A type-identifier of the source of data
+     * @internal
+     */
+    get _type() {
+        return 'pointer-source';
+    }
+    /**
+     * Consume a pointer event
+     * @returns the next pointer event to be consumed, or null if there are none
+     * @internal
+     */
+    _consume() {
+        // producer-consumer mechanism
+        return this._queue.shift() || null;
+    }
+    /**
+     * Stats related to this source of data
+     * @internal
+     */
+    get _stats() {
+        return 'pointer input';
+    }
+    /**
+     * Initialize this source of data
+     * @returns a promise that resolves as soon as this source of data is initialized
+     * @internal
+     */
+    _init() {
+        Utils.log('Initializing PointerSource...');
+        // nothing to do yet; we need the viewport
+        return speedy_vision_default().Promise.resolve();
+    }
+    /**
+     * Release this source of data
+     * @returns a promise that resolves as soon as this source of data is released
+     * @internal
+     */
+    _release() {
+        this._setViewport(null);
+        return speedy_vision_default().Promise.resolve();
+    }
+    /**
+     * Link a viewport to this source of data
+     * @param viewport possibly null
+     * @internal
+     */
+    _setViewport(viewport) {
+        // unlink previous viewport, if any
+        if (this._viewport !== null) {
+            this._viewport.hud.container.style.removeProperty('pointer-events');
+            this._viewport._subContainer.style.removeProperty('pointer-events');
+            this._viewport.container.style.removeProperty('pointer-events');
+            this._viewport.canvas.style.removeProperty('pointer-events');
+            this._removeEventListeners(this._viewport.canvas);
+        }
+        // link new viewport, if any
+        if ((this._viewport = viewport) !== null) {
+            this._addEventListeners(this._viewport.canvas);
+            this._viewport.canvas.style.pointerEvents = 'auto';
+            this._viewport.container.style.pointerEvents = 'none';
+            this._viewport._subContainer.style.pointerEvents = 'none';
+            this._viewport.hud.container.style.pointerEvents = 'none';
+            // Make HUD elements accept pointer events
+            for (const element of this._viewport.hud.container.children) {
+                const el = element;
+                if (el.style.getPropertyValue('pointer-events') == '')
+                    el.style.pointerEvents = 'auto';
+            }
+        }
+    }
+    /**
+     * Event handler
+     * @param event
+     */
+    _onPointerEvent(event) {
+        this._queue.push(event);
+        event.preventDefault();
+    }
+    /**
+     * Cancel event
+     * @param event
+     */
+    _cancelEvent(event) {
+        if (event.cancelable)
+            event.preventDefault();
+    }
+    /**
+     * Add event listeners
+     * @param canvas
+     */
+    _addEventListeners(canvas) {
+        canvas.addEventListener('pointerdown', this._onPointerEvent);
+        canvas.addEventListener('pointerup', this._onPointerEvent);
+        canvas.addEventListener('pointermove', this._onPointerEvent);
+        canvas.addEventListener('pointercancel', this._onPointerEvent);
+        canvas.addEventListener('pointerleave', this._onPointerEvent);
+        canvas.addEventListener('pointerenter', this._onPointerEvent);
+        canvas.addEventListener('touchstart', this._cancelEvent, { passive: false });
+    }
+    /**
+     * Remove event listeners
+     * @param canvas
+     */
+    _removeEventListeners(canvas) {
+        canvas.removeEventListener('touchstart', this._cancelEvent);
+        canvas.removeEventListener('pointerenter', this._onPointerEvent);
+        canvas.removeEventListener('pointerleave', this._onPointerEvent);
+        canvas.removeEventListener('pointercancel', this._onPointerEvent);
+        canvas.removeEventListener('pointermove', this._onPointerEvent);
+        canvas.removeEventListener('pointerup', this._onPointerEvent);
+        canvas.removeEventListener('pointerdown', this._onPointerEvent);
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/sources/source-factory.ts
 /*
  * encantar.js
@@ -25223,6 +27413,7 @@ class CameraSource extends VideoSource {
 
 
 
+
 /**
  * Factory of sources of data
  */
@@ -25230,6 +27421,7 @@ class SourceFactory {
     /**
      * Create a <video>-based source of data
      * @param video video element
+     * @returns a video source
      */
     static Video(video) {
         return new VideoSource(video);
@@ -25237,6 +27429,7 @@ class SourceFactory {
     /**
      * Create a <canvas>-based source of data
      * @param canvas canvas element
+     * @returns a canvas source
      */
     static Canvas(canvas) {
         return new CanvasSource(canvas);
@@ -25244,9 +27437,17 @@ class SourceFactory {
     /**
      * Create a Webcam-based source of data
      * @param options optional options object
+     * @returns a camera source
      */
     static Camera(options = {}) {
         return new CameraSource(options);
+    }
+    /**
+     * Create a source of pointer-based input
+     * @returns a pointer source
+    */
+    static Pointer() {
+        return new PointerSource();
     }
 }
 
@@ -25420,9 +27621,6 @@ class FullscreenButton {
         button.style.right = BUTTON_MARGIN + 'px';
         button.style.width = BUTTON_SIZE + 'px';
         button.style.height = BUTTON_SIZE + 'px';
-        button.style.display = 'flex';
-        button.style.alignItems = 'center';
-        button.style.padding = '2px';
         button.style.opacity = '0.5';
         button.style.cursor = 'pointer';
         button.style.outline = 'none';
@@ -25492,6 +27690,7 @@ class FullscreenButton {
  * viewport.ts
  * Viewport
  */
+
 
 
 
@@ -25963,7 +28162,7 @@ class BestFitResizeStrategy extends ImmersiveResizeStrategy {
     resize(viewport) {
         const subContainer = viewport._subContainer;
         const windowAspectRatio = window.innerWidth / window.innerHeight;
-        const viewportAspectRatio = viewport._realSize.width / viewport._realSize.height;
+        const viewportAspectRatio = viewport.aspectRatio;
         let width = 1, height = 1, left = '0px', top = '0px';
         if (viewportAspectRatio <= windowAspectRatio) {
             height = window.innerHeight;
@@ -26072,9 +28271,14 @@ class Viewport extends ViewportEventTarget {
      * on which the virtual scene will be drawn
      */
     get virtualSize() {
+        return Utils.resolution(this._resolution, this.aspectRatio);
+    }
+    /**
+     * Aspect ratio of the viewport
+     */
+    get aspectRatio() {
         const size = this._realSize;
-        const aspectRatio = size.width / size.height;
-        return Utils.resolution(this._resolution, aspectRatio);
+        return size.width / size.height;
     }
     /**
      * Is the viewport currently being displayed in fullscreen mode?
@@ -26128,6 +28332,59 @@ class Viewport extends ViewportEventTarget {
      */
     exitFullscreen() {
         return this._fullscreen.exit();
+    }
+    /**
+     * Convert a position given in space units to a corresponding pixel
+     * position in canvas space. Units in normalized space range from -1 to +1.
+     * The center of the canvas is at (0,0). The top right corner is at (1,1).
+     * The bottom left corner is at (-1,-1).
+     * @param position in space units
+     * @param space either "normalized" (default) or "adjusted"; @see PointerSpace
+     * @returns an equivalent pixel position in canvas space
+     */
+    convertToPixels(position, space = 'normalized') {
+        const canvas = this.canvas;
+        let px = position.x, py = position.y;
+        if (space == 'adjusted') {
+            // convert from adjusted to normalized space
+            const a = canvas.width / canvas.height;
+            if (a >= 1)
+                py *= a;
+            else
+                px /= a;
+        }
+        else if (space != 'normalized')
+            throw new IllegalArgumentError(`Invalid space: "${space}"`);
+        // convert from normalized to canvas space
+        const x = 0.5 * (1 + px) * canvas.width;
+        const y = 0.5 * (1 - py) * canvas.height;
+        // done!
+        return new Vector2(x, y);
+    }
+    /**
+     * Convert a pixel position given in canvas space to a corresponding
+     * position in space units. This is the inverse of convertToPixels().
+     * @param position in canvas space
+     * @space either "normalized" (default) or "adjusted"; see @PointerSpace
+     * @returns an equivalent position in space units
+     */
+    convertFromPixels(position, space = 'normalized') {
+        const canvas = this.canvas;
+        // convert from canvas to normalized space
+        let x = 2 * position.x / canvas.width - 1;
+        let y = -2 * position.y / canvas.height + 1;
+        if (space == 'adjusted') {
+            // convert from normalized to adjusted space
+            const a = canvas.width / canvas.height;
+            if (a >= 1)
+                y /= a;
+            else
+                x *= a;
+        }
+        else if (space != 'normalized')
+            throw new IllegalArgumentError(`Invalid space: "${space}"`);
+        // done!
+        return new Vector2(x, y);
     }
     /**
      * Initialize the viewport (when the session starts)
@@ -26206,6 +28463,8 @@ class Viewport extends ViewportEventTarget {
 
 
 
+
+
 /**
  * GPU-accelerated Augmented Reality for the web
  */
@@ -26217,6 +28476,28 @@ class AR {
      */
     static startSession(options) {
         return Session.instantiate(options);
+    }
+    /**
+     * Checks if the engine can be run in the browser the client is using
+     * @returns true if the engine is compatible with the browser
+     */
+    static isSupported() {
+        return Session.isSupported();
+    }
+    /**
+     * Engine version
+     */
+    static get version() {
+        if (false)
+            {}
+        else
+            return "0.4.0";
+    }
+    /**
+     * Speedy Vision
+     */
+    static get Speedy() {
+        return (speedy_vision_default());
     }
     /**
      * Trackers
@@ -26239,32 +28520,29 @@ class AR {
         return new Viewport(settings);
     }
     /**
+     * Create a new 2D vector
+     * @param x x-coordinate
+     * @param y y-coordinate
+     * @returns a new 2D vector with the provided coordinates
+     */
+    static Vector2(x, y) {
+        return new Vector2(x, y);
+    }
+    /**
+     * Create a new 3D vector
+     * @param x x-coordinate
+     * @param y y-coordinate
+     * @param z z-coordinate
+     * @returns a new 3D vector with the provided coordinates
+     */
+    static Vector3(x, y, z) {
+        return new Vector3(x, y, z);
+    }
+    /**
      * Global Settings
      */
     static get Settings() {
         return Settings;
-    }
-    /**
-     * Engine version
-     */
-    static get version() {
-        if (false)
-            {}
-        else
-            return "0.3.0";
-    }
-    /**
-     * Speedy Vision
-     */
-    static get Speedy() {
-        return (speedy_vision_default());
-    }
-    /**
-     * Checks if the engine can be run in the browser the client is using
-     * @returns true if the engine is compatible with the browser
-     */
-    static isSupported() {
-        return Session.isSupported();
     }
 }
 // Freeze the namespace
